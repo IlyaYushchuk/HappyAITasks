@@ -1,5 +1,4 @@
 import asyncio
-import os
 from pathlib import Path
 from aiogram import types
 from openai_client import transcribe_audio, generate_response, text_to_speech
@@ -14,21 +13,15 @@ async def handle_voice_message(message: types.Message):
         print(f"Скачиваем файл: {ogg_path}")
         await save_audio(message.voice, ogg_path)
 
-        # Преобразуем аудио в текст (используем OGG напрямую)
         print(f"Преобразуем аудио в текст: {ogg_path}")
         text = await transcribe_audio(ogg_path)
-        await message.reply(f"Вы сказали: {text}")
 
-        # Генерируем ответ
         print("Генерируем текстовый ответ")
         response_text = await generate_response(text)
-        await message.reply(f"Ответ: {response_text}")
 
-        # Преобразуем ответ в аудио (OpenAI TTS создаст MP3)
         print(f"Преобразуем текст в аудио: {output_path}")
         await text_to_speech(response_text, output_path)
 
-        # Отправляем аудио ответ
         print(f"Отправляем аудио: {output_path}")
         with open(output_path, "rb") as audio:
             await message.reply_voice(audio)

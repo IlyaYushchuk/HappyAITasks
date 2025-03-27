@@ -1,7 +1,7 @@
 import openai
-from config import OPENAI_API_KEY
+from config import settings
 
-client = openai.AsyncClient(api_key=OPENAI_API_KEY)
+client = openai.AsyncClient(api_key=settings.openai_api_token)
 
 async def transcribe_audio(audio_path: str) -> str:
     """Преобразование аудио в текст"""

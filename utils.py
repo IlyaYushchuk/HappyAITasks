@@ -1,4 +1,3 @@
-import os
 import aiofiles
 from aiogram.types import File
 
