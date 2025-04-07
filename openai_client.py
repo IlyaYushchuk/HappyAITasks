@@ -3,7 +3,7 @@ import asyncio
 from config import settings
 
 client = openai.AsyncClient(api_key=settings.openai_api_token,  default_headers={"OpenAI-Beta": "assistants=v2"})
-
+#some test comments
 ASSISTANT_ID = None
 
 async def init_assistant():
