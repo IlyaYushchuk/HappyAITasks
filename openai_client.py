@@ -1,9 +1,8 @@
 import openai
-import asyncio
 from config import settings
 
 client = openai.AsyncClient(api_key=settings.openai_api_token,  default_headers={"OpenAI-Beta": "assistants=v2"})
-#some test comments
+
 ASSISTANT_ID = None
 
 async def init_assistant():
@@ -11,7 +10,7 @@ async def init_assistant():
     assistant = await client.beta.assistants.create(
         name="GenerateAnswersAssistant",
         instructions="Ты ассистент который генерирует ответы в 3-4 предложения.",
-        model="gpt-3.5-turbo"
+        model="gpt-4-turbo"
     )
     return assistant.id
 
@@ -41,21 +40,11 @@ async def generate_response(text: str) -> str:
         content=text
     )
     
-    # Запускаем ассистента для обработки потока
-    run = await client.beta.threads.runs.create(
+    # Запускаем и ожидаем ответа
+    run = await client.beta.threads.runs.create_and_poll(
         thread_id=thread.id,
         assistant_id=ASSISTANT_ID
     )
-    
-    # Ожидаем завершения выполнения
-    while True:
-        run_status = await client.beta.threads.runs.retrieve(
-            thread_id=thread.id,
-            run_id=run.id
-        )
-        if run_status.status == "completed":
-            break
-        await asyncio.sleep(1)
     
     messages = await client.beta.threads.messages.list(
         thread_id=thread.id
