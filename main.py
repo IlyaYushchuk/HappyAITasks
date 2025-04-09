@@ -2,6 +2,7 @@ from aiogram import Bot, Dispatcher, types
 from aiogram.utils import executor
 from config import settings
 from voice_handler import handle_voice_message
+from startup import initialize
 import os
 
 os.environ.pop("HTTP_PROXY", None)
@@ -10,6 +11,15 @@ os.environ.pop("HTTPS_PROXY", None)
 # Инициализация бота
 bot = Bot(token=settings.telegram_token)
 dp = Dispatcher(bot)
+
+# Отдельная инициализация ассистента
+async def on_startup(_):
+    await initialize()
+
+async def on_shutdown(_):
+    await bot.close()  # Закрываем соединение с Telegram
+    await dp.storage.close()
+    await dp.storage.wait_closed()
 
 # Регистрация обработчика голосовых сообщений
 @dp.message_handler(content_types=[types.ContentType.VOICE])
@@ -22,4 +32,4 @@ async def start_command(message: types.Message):
     await message.reply("Привет! Отправь мне голосовое сообщение, и я отвечу голосом.")
 
 if __name__ == "__main__":
-    executor.start_polling(dp, skip_updates=True)
+    executor.start_polling(dp, skip_updates=True, on_startup=on_startup,  on_shutdown=on_shutdown)
