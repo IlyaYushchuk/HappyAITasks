@@ -3,8 +3,9 @@ from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy.sql import text
 from app.config import settings
 
-DATABASE_URL = settings.database_url
-engine = create_async_engine(DATABASE_URL, echo=True)
+
+engine = create_async_engine(settings.database_url, echo=False)
+# Неявно заменяет QueuePool на AsyncAdaptedPool для работы в асинхронном пуле
 async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 class Base(DeclarativeBase):
@@ -16,7 +17,6 @@ async def get_session() -> AsyncSession:
 
 async def test_connection():
     async with engine.connect() as conn:
-        # Используем text() для создания исполняемого запроса
         await conn.execute(text("SELECT 1"))
     print("Database connection successful!")
 

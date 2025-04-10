@@ -8,7 +8,8 @@ class User(Base):
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     telegram_id: Mapped[int] = mapped_column(Integer, unique=True, index=True)
     username: Mapped[str] = mapped_column(String(50), nullable=True)
-
+    thread_id = Column(String, nullable=True)
+    
     # Связь с таблицей values
     values: Mapped[list["Value"]] = relationship("Value", back_populates="user")
 

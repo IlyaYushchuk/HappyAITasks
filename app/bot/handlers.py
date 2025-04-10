@@ -27,7 +27,8 @@ async def start_command(message: types.Message, state: FSMContext):
     await state.set_state(ValueState.waiting_for_response)
 
 async def handle_text_response(message: types.Message, state: FSMContext):
-    response = await process_assistant_response(message.from_user.id, message.text)
+    print(f"USERNAME {message.from_user.username}")
+    response = await process_assistant_response(message.from_user.id, message.text, message.from_user.username)
     await message.reply(response)
     if "сохранена" in response.lower():
         await state.clear()
@@ -35,10 +36,6 @@ async def handle_text_response(message: types.Message, state: FSMContext):
     else:
         await state.set_state(ValueState.waiting_for_response)
 
-dp.message.register(
-    voice_message_handler,
-    lambda message: message.content_type == types.ContentType.VOICE,
-    StateFilter("*")
-)
+dp.message.register(voice_message_handler, lambda message: message.content_type == types.ContentType.VOICE, StateFilter("*"))
 dp.message.register(start_command, CommandStart())
-dp.message.register(handle_text_response, StateFilter(ValueState.waiting_for_response))
+dp.message.register(handle_text_response, StateFilter("*"))

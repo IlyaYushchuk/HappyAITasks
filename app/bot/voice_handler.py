@@ -1,11 +1,10 @@
-# app/bot/voice_handler.py
-import asyncio
 from pathlib import Path
 from aiogram import Bot, types
 from aiogram.types import FSInputFile
 from app.openai_client.client import transcribe_audio, text_to_speech, process_assistant_response
 from app.bot.utils import save_audio
 from app.bot.states import ValueState
+
 
 async def handle_voice_message(bot: Bot, message: types.Message, state):
     ogg_path = f"temp_{message.message_id}.ogg"
@@ -17,7 +16,8 @@ async def handle_voice_message(bot: Bot, message: types.Message, state):
         print(f"Преобразуем аудио в текст: {ogg_path}")
         text = await transcribe_audio(ogg_path)
         print("Обрабатываем ответ через ассистента")
-        response_text = await process_assistant_response(message.from_user.id, text)
+        print(f"USERNAME {message.from_user.username}")
+        response_text = await process_assistant_response(message.from_user.id, text, message.from_user.username)
         print(f"Преобразуем текст в аудио: {output_path}")
         await text_to_speech(response_text, output_path)
         print(f"Отправляем аудио: {output_path}")
@@ -30,14 +30,12 @@ async def handle_voice_message(bot: Bot, message: types.Message, state):
     finally:
         for path in [ogg_path, output_path]:
             if Path(path).exists():
-                print(f"Пытаемся удалить файл: {path}")
-                for attempt in range(3):
-                    try:
-                        await asyncio.sleep(0.5)
-                        Path(path).unlink()
-                        print(f"Файл удалён: {path}")
-                        break
-                    except PermissionError as e:
-                        print(f"Попытка {attempt + 1}: Не удалось удалить файл {path}: {e}")
-                        if attempt == 2:
-                            print(f"Оставляем файл {path}")
+                try:
+                    Path(path).unlink()
+                    print(f"Файл удалён: {path}")
+                except PermissionError as e:
+                    print(f"Не удалось удалить файл {path}: {e}")
+                except Exception as e:
+                    print(f"Ошибка при удалении файла {path}: {e}")
+            else:
+                print(f"Файл {path} уже не существует, пропускаем удаление")
