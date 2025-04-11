@@ -8,5 +8,8 @@ async def main():
     finally:
         await on_shutdown(None)
 
+#TODO 
+#1) add logging
+#2) add assistant id to .env
 if __name__ == "__main__":
     asyncio.run(main())
