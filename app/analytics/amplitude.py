@@ -24,7 +24,7 @@ def log_event(telegram_id: int, event_type: str, event_properties: dict = None):
     def sync_log_event():
         """Синхронная функция для отправки события."""
         try:
-            amplitude_client.log_event(event)
+            amplitude_client.track(event)
             logger.info(f"Logged event: {event_type} for user {telegram_id}")
         except Exception as e:
             logger.error(f"Failed to log event {event_type}: {e}")
