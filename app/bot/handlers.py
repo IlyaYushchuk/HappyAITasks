@@ -6,12 +6,12 @@ from app.config import settings
 from app.bot.voice_handler import handle_voice_message
 from app.openai_client.client import process_assistant_response
 from app.bot.states import ValueState
+from app.startup import initialize
 
 bot = Bot(token=settings.telegram_token)
 dp = Dispatcher()
 
 async def on_startup(_):
-    from app.startup import initialize
     await initialize()
 
 async def on_shutdown(_):
