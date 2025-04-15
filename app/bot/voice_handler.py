@@ -1,26 +1,25 @@
 from pathlib import Path
 from aiogram import Bot, types
 from aiogram.types import FSInputFile
+from aiogram.fsm.context import FSMContext
 from app.openai_client.client import transcribe_audio, text_to_speech, process_assistant_response
 from app.bot.utils import save_audio
 from app.bot.states import ValueState
 
 
-async def handle_voice_message(bot: Bot, message: types.Message, state):
+async def handle_voice_message(bot: Bot, message: types.Message, state: FSMContext):
     ogg_path = f"temp_{message.message_id}.ogg"
     output_path = f"output_{message.message_id}.mp3"
 
     try:
-        print(f"Скачиваем файл: {ogg_path}")
+     
         await save_audio(bot, message.voice, ogg_path)
-        print(f"Преобразуем аудио в текст: {ogg_path}")
+       
         text = await transcribe_audio(ogg_path)
-        print("Обрабатываем ответ через ассистента")
-        print(f"USERNAME {message.from_user.username}")
         response_text = await process_assistant_response(message.from_user.id, text, message.from_user.username)
-        print(f"Преобразуем текст в аудио: {output_path}")
+     
         await text_to_speech(response_text, output_path)
-        print(f"Отправляем аудио: {output_path}")
+    
         await message.reply_voice(FSInputFile(output_path))
         if "сохранена" in response_text.lower():
             await state.clear()
