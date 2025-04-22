@@ -18,8 +18,8 @@ export function AudioVisualizer({
   const analyserRef = useRef<AnalyserNode | null>(null);
   const animationFrameRef = useRef<number>();
   const [amplitude, setAmplitude] = useState(0);
+  const prevAmplitudes = useRef<number[]>([]); // Для сглаживания
 
-  // Порог амплитуды для распознавания речи
   const userSpeakingThreshold = 40;
 
   useEffect(() => {
@@ -51,62 +51,43 @@ export function AudioVisualizer({
       const averageAmplitude = totalAmplitude / bufferLength;
       setAmplitude(averageAmplitude);
 
-      // Определяем, говорит ли пользователь
       const isSpeaking = averageAmplitude > userSpeakingThreshold;
 
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-      const centerY = canvas.height / 2;
       const centerX = canvas.width / 2;
-      const barWidth = canvas.width / bufferLength;
+      const centerY = canvas.height / 2;
 
-      ctx.lineWidth = 2;
-      ctx.strokeStyle = isSpeaking ? "rgb(59, 130, 246)" : "rgb(239, 68, 68)";
       ctx.fillStyle = isSpeaking
-        ? "rgba(59, 130, 246, 0.3)"
-        : "rgba(239, 68, 68, 0.3)";
+        ? "rgba(59, 130, 246, 0.7)"
+        : "rgba(239, 68, 68, 0.7)";
 
-      // Рисуем левую половину
-      ctx.beginPath();
-      for (let i = 0; i < bufferLength / 2; i++) {
-        const normalizedIndex = i / (bufferLength / 2);
-        const x = centerX + normalizedIndex * (canvas.width / 2);
-        const amplitude = (dataArray[i] / 255) * (canvas.height / 2) * 1.2;
-        const y = centerY + amplitude * Math.sin(normalizedIndex * Math.PI);
+      // Сглаживание амплитуд
+      prevAmplitudes.current.push(averageAmplitude);
+      if (prevAmplitudes.current.length > 5) prevAmplitudes.current.shift();
+      const smoothedAmplitude =
+        prevAmplitudes.current.reduce((a, b) => a + b, 0) / prevAmplitudes.current.length;
 
-        if (i === 0) {
-          ctx.moveTo(x, centerY);
-        }
-
-        if (i < bufferLength / 2 - 1) {
-          const nextX = centerX + ((i + 1) / (bufferLength / 2)) * (canvas.width / 2);
-          const nextAmplitude =
-            (dataArray[i + 1] / 255) * (canvas.height / 2) * 1.2;
-          const nextY =
-            centerY + nextAmplitude * Math.sin(((i + 1) / (bufferLength / 2)) * Math.PI);
-          const controlX = (x + nextX) / 2;
-          const controlY = (y + nextY) / 2;
-          ctx.quadraticCurveTo(controlX, controlY, nextX, nextY);
-        }
+      // Подготовка данных для столбцов
+      const barWidth = canvas.width / bufferLength;
+      const waveData = new Array(bufferLength).fill(0);
+      for (let i = 0; i < bufferLength; i++) {
+        waveData[i] = (dataArray[i] / 255) * (canvas.height / 2) * 1.5 * (smoothedAmplitude / 100);
       }
 
-      // Рисуем правую половину (зеркалирование по горизонтали)
-      for (let i = bufferLength / 2 - 1; i >= 0; i--) {
-        const normalizedIndex = i / (bufferLength / 2);
-        const x = centerX - normalizedIndex * (canvas.width / 2);
-        const amplitude = (dataArray[i] / 255) * (canvas.height / 2) * 1.2;
-        const y = centerY + amplitude * Math.sin(normalizedIndex * Math.PI);
-        ctx.quadraticCurveTo(
-          (x + (centerX - ((i - 1) / (bufferLength / 2)) * (canvas.width / 2))) / 2,
-          (y + (centerY + amplitude * Math.sin(((i - 1) / (bufferLength / 2)) * Math.PI))) / 2,
-          x,
-          y
-        );
-      }
+      // Рисуем столбцы
+      for (let i = 0; i < bufferLength; i++) {
+        const normalizedIndex = (i - bufferLength / 2) / (bufferLength / 2); 
+        // Высота максимальна в центре
+        const height = waveData[i] * Math.cos(normalizedIndex * (Math.PI / 2));
+        const x = i * barWidth;
 
-      ctx.lineTo(centerX, centerY);
-      ctx.fill();
-      ctx.stroke();
+        // Верхняя половина (от центра вверх)
+        ctx.fillRect(x, centerY - height, barWidth, height);
+
+        // Нижняя половина (от центра вниз, симметрично)
+        ctx.fillRect(x, centerY, barWidth, height);
+      }
 
       animationFrameRef.current = requestAnimationFrame(draw);
     };
