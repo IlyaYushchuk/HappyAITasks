@@ -71,6 +71,7 @@ export default function Home() {
                 : "w-full items-center px-96"
             }`}
           >
+
             <MicrophoneButton />
             <TranscriptArea />
           </div>
