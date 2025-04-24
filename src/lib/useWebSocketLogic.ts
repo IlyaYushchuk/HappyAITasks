@@ -4,9 +4,9 @@
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { useCallback, useState, useEffect, useRef } from "react";
+import { useCallback, useState, useRef } from "react";
 import { env } from "~/env";
-import useSettingsStore from "~/stores/useSettingsStore";
+import useSettingsStore, { TranscriptEntry } from "~/stores/useSettingsStore";
 import toast from "react-hot-toast";
 
 interface WebSocketLogic {
@@ -14,7 +14,8 @@ interface WebSocketLogic {
   audioStream: MediaStream | null;
   isUserSpeaking: boolean;
   isAIPlaying: boolean;
-  aiAudioElement: HTMLAudioElement | null;
+  aiAudioData: Float32Array | null;
+  userAudioData: Float32Array | null;
   startSession: () => Promise<void>;
   endSession: () => Promise<void>;
   setIsUserSpeaking: (isSpeaking: boolean) => void;
@@ -26,39 +27,67 @@ export function useWebSocketLogic(): WebSocketLogic {
   const [audioStream, setAudioStream] = useState<MediaStream | null>(null);
   const [isUserSpeaking, setIsUserSpeaking] = useState(false);
   const [isAIPlaying, setIsAIPlaying] = useState(false);
-  const [aiAudioElement, setAIAudioElement] = useState<HTMLAudioElement | null>(null);
+  const [aiAudioData, setAIAudioData] = useState<Float32Array | null>(null);
+  const [userAudioData, setUserAudioData] = useState<Float32Array | null>(null);
   const [status, setStatus] = useState<"disconnected" | "connecting" | "connected">("disconnected");
   const websocketRef = useRef<WebSocket | null>(null);
   const silenceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const audioProcessorRef = useRef<() => void>(() => {});
   const audioContextRef = useRef<AudioContext | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const audioQueueRef = useRef<string[]>([]);
+  const isPlayingQueueRef = useRef(false);
+  const lastAudioLogTimeRef = useRef(0);
 
-  // Функция для отправки аудио с микрофона через WebSocket
+  const toggleMicrophone = (enabled: boolean) => {
+    if (audioStream) {
+      audioStream.getAudioTracks().forEach((track) => {
+        track.enabled = enabled;
+      });
+      console.log(`[${new Date().toISOString()}] Микрофон ${enabled ? "включен" : "отключен"}`);
+    }
+  };
+
   const sendMicrophoneAudio = async (stream: MediaStream) => {
     if (!websocketRef.current) return;
 
     const audioContext = new AudioContext({ sampleRate: 16000 });
     const source = audioContext.createMediaStreamSource(stream);
     const processor = audioContext.createScriptProcessor(4096, 1, 1);
-
-    source.connect(processor);
+    analyserRef.current = audioContext.createAnalyser();
+    analyserRef.current.fftSize = 4096; // Увеличиваем для лучшей чувствительности
+    analyserRef.current.smoothingTimeConstant = 0.8; // Добавляем сглаживание
+    source.connect(analyserRef.current);
+    analyserRef.current.connect(processor);
     processor.connect(audioContext.destination);
 
-    let lastLogTime = 0;
     processor.onaudioprocess = (event) => {
+      if (isAIPlaying) return;
       const inputBuffer = event.inputBuffer.getChannelData(0);
-      console.log(`[${new Date().toISOString()}] First 10 audio samples (raw):`, inputBuffer.slice(0, 10)); // Логируем сырые данные
+      const dataArray = new Float32Array(analyserRef.current!.frequencyBinCount);
+      analyserRef.current!.getFloatTimeDomainData(dataArray);
+
+      // Проверяем, есть ли ненулевые данные
+      const hasData = dataArray.some((v) => Math.abs(v) > 0.001);
+      if (hasData) {
+        setUserAudioData(dataArray);
+      } else {
+        setUserAudioData(null);
+      }
+
+      const now = Date.now();
+      if (now - lastAudioLogTimeRef.current >= 1000) {
+        console.log(`[${new Date().toISOString()}] Аудиосэмплы пользователя:`, dataArray.slice(0, 10));
+        console.log(`[${new Date().toISOString()}] isUserSpeaking: ${isUserSpeaking}, hasData: ${hasData}`);
+        lastAudioLogTimeRef.current = now;
+      }
+
       const binary = convertFloat32ToInt16(inputBuffer);
       const base64Audio = arrayBufferToBase64(binary);
-      console.log(`[${new Date().toISOString()}] First 10 bytes of audio (after conversion):`, new Uint8Array(binary).slice(0, 10));
       if (websocketRef.current?.readyState === WebSocket.OPEN) {
-        websocketRef.current.send(
-          JSON.stringify({ user_audio_chunk: base64Audio })
-        );
-        const now = Date.now();
-        if (now - lastLogTime > 1000) {
-          console.log(`[${new Date().toISOString()}] Sent user audio chunk`);
-          lastLogTime = now;
+        websocketRef.current.send(JSON.stringify({ user_audio_chunk: base64Audio }));
+        if (now - lastAudioLogTimeRef.current >= 1000) {
+          console.log(`[${new Date().toISOString()}] Отправлен аудиофрагмент пользователя`);
         }
       }
     };
@@ -66,14 +95,14 @@ export function useWebSocketLogic(): WebSocketLogic {
     audioProcessorRef.current = () => {
       processor.disconnect();
       source.disconnect();
+      analyserRef.current?.disconnect();
       audioContext.close();
     };
   };
 
-  // Конвертация аудиоданных в Int16
   const convertFloat32ToInt16 = (buffer: Float32Array) => {
     if (!buffer) {
-      console.error("Buffer is undefined or null");
+      console.error("Буфер не определён или пуст");
       return new ArrayBuffer(0);
     }
     const len = buffer.length;
@@ -84,7 +113,6 @@ export function useWebSocketLogic(): WebSocketLogic {
     return result.buffer;
   };
 
-  // Конвертация ArrayBuffer в base64
   const arrayBufferToBase64 = (buffer: ArrayBuffer) => {
     const bytes = new Uint8Array(buffer);
     let binary = "";
@@ -94,7 +122,6 @@ export function useWebSocketLogic(): WebSocketLogic {
     return btoa(binary);
   };
 
-  // Воспроизведение PCM через AudioContext
   const playPcmAudio = (base64Audio: string) => {
     try {
       const audioData = atob(base64Audio);
@@ -108,26 +135,46 @@ export function useWebSocketLogic(): WebSocketLogic {
         floatData[i] = pcmData[i] / 32768;
       }
 
+      setAIAudioData(floatData);
+
       if (!audioContextRef.current) {
         audioContextRef.current = new AudioContext({ sampleRate: 16000 });
       }
 
       const audioBuffer = audioContextRef.current.createBuffer(1, floatData.length, 16000);
       audioBuffer.getChannelData(0).set(floatData);
-
       const source = audioContextRef.current.createBufferSource();
       source.buffer = audioBuffer;
       source.connect(audioContextRef.current.destination);
       source.onended = () => {
-        console.log(`[${new Date().toISOString()}] AI audio playback ended`);
+        console.log(`[${new Date().toISOString()}] Воспроизведение аудио ИИ завершено`);
         setIsAIPlaying(false);
+        setAIAudioData(null);
+        isPlayingQueueRef.current = false;
+        playNextInQueue();
       };
       source.start();
       setIsAIPlaying(true);
-      console.log(`[${new Date().toISOString()}] AI audio playback started`);
+      toggleMicrophone(false);
+      console.log(`[${new Date().toISOString()}] Воспроизведение аудио ИИ начато, размер: ${floatData.length} сэмплов`);
     } catch (error) {
-      console.error(`[${new Date().toISOString()}] PCM playback error:`, error);
+      console.error(`[${new Date().toISOString()}] Ошибка воспроизведения PCM:`, error);
       setIsAIPlaying(false);
+      setAIAudioData(null);
+      toggleMicrophone(true);
+      isPlayingQueueRef.current = false;
+      playNextInQueue();
+    }
+  };
+
+  const playNextInQueue = () => {
+    if (isPlayingQueueRef.current || audioQueueRef.current.length === 0) return;
+    isPlayingQueueRef.current = true;
+    const nextAudio = audioQueueRef.current.shift();
+    if (nextAudio) {
+      playPcmAudio(nextAudio);
+    } else {
+      isPlayingQueueRef.current = false;
     }
   };
 
@@ -135,9 +182,7 @@ export function useWebSocketLogic(): WebSocketLogic {
     if (!conversationId) return { status: "error" };
     const response = await fetch(`/api/routes/conversation/${conversationId}`, {
       method: "GET",
-      headers: {
-        "Content-Type": "application/json",
-      },
+      headers: { "Content-Type": "application/json" },
     });
 
     if (!response.ok) {
@@ -146,14 +191,12 @@ export function useWebSocketLogic(): WebSocketLogic {
     }
 
     const data = await response.json();
-
     if (data.status === "processing") {
       await new Promise((resolve) => setTimeout(resolve, 1000));
       return await fetchData();
-    } else {
-      console.log("Conversation analysis:", data);
-      return data;
     }
+    console.log("Анализ разговора:", data);
+    return data;
   };
 
   const analyzeConversation = async () => {
@@ -162,14 +205,33 @@ export function useWebSocketLogic(): WebSocketLogic {
       const data = await fetchData();
       if (!data.transcript) return;
 
-      setTranscript(data.transcript);
+      const transcriptArray: TranscriptEntry[] = Array.isArray(data.transcript)
+        ? data.transcript.map((item: any) => ({
+            role: item.role === "ai" ? "agent" : item.role,
+            message: item.message || String(item.text || ""),
+            tool_calls: item.tool_calls || null,
+            tool_results: item.tool_results || null,
+            feedback: item.feedback || null,
+            time_in_call_secs: item.time_in_call_secs || 0,
+            conversation_turn_metrics: item.conversation_turn_metrics || null,
+          }))
+        : [
+            {
+              role: "unknown" as "agent" | "user",
+              message: String(data.transcript),
+              tool_calls: null,
+              tool_results: null,
+              feedback: null,
+              time_in_call_secs: 0,
+              conversation_turn_metrics: null,
+            },
+          ];
+      setTranscript(transcriptArray);
 
       const analysis = await fetch("/api/routes/analyze", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ content: JSON.stringify(data.transcript) }),
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content: JSON.stringify(transcriptArray) }),
       });
 
       const analysisData = await analysis.json();
@@ -178,7 +240,7 @@ export function useWebSocketLogic(): WebSocketLogic {
       toast.success("Диалог успешно проанализирован!");
       setScoreArray(array);
     } catch (error) {
-      console.error("Failed to analyze conversation:", error);
+      console.error("Ошибка анализа разговора:", error);
     }
   };
 
@@ -192,28 +254,34 @@ export function useWebSocketLogic(): WebSocketLogic {
       websocketRef.current = new WebSocket(wsUrl);
 
       websocketRef.current.onopen = () => {
-        console.log(`[${new Date().toISOString()}] WebSocket connected`);
+        console.log("Подключено с деталями:", {
+          status: "connected",
+          timestamp: new Date().toISOString(),
+        });
         setStatus("connected");
         sendMicrophoneAudio(stream);
 
-        // Отправляем keep_alive каждые 5 секунд, чтобы избежать таймаута
         setInterval(() => {
           if (websocketRef.current?.readyState === WebSocket.OPEN) {
             websocketRef.current.send(JSON.stringify({ type: "keep_alive" }));
-            console.log(`[${new Date().toISOString()}] Sent keep_alive`);
+            console.log(`[${new Date().toISOString()}] Отправлен keep_alive`);
           }
         }, 5000);
       };
 
       websocketRef.current.onmessage = (event) => {
         const message = JSON.parse(event.data);
-        console.log(`[${new Date().toISOString()}] WebSocket message received:`, message);
+        console.log("Сообщение:", {
+          source: message.source || (message.type === "audio" ? "ai" : "unknown"),
+          message: message,
+          timestamp: new Date().toISOString(),
+          rawMessage: message,
+        });
 
         if (message.type === "conversation_initiation_metadata") {
-          const newConversationId =
-            message.conversation_initiation_metadata_event.conversation_id;
+          const newConversationId = message.conversation_initiation_metadata_event.conversation_id;
           setConversationId(newConversationId);
-          console.log(`[${new Date().toISOString()}] Conversation ID received: ${newConversationId}`);
+          console.log(`[${new Date().toISOString()}] ID разговора: ${newConversationId}`);
         }
 
         if (message.type === "audio") {
@@ -221,37 +289,75 @@ export function useWebSocketLogic(): WebSocketLogic {
           if (silenceTimeoutRef.current) clearTimeout(silenceTimeoutRef.current);
 
           if (message.audio_event?.audio_base_64) {
-            playPcmAudio(message.audio_event.audio_base_64);
+            audioQueueRef.current.push(message.audio_event.audio_base_64);
+            playNextInQueue();
           }
 
           if (message.audio_event?.isFinal) {
-            console.log(`[${new Date().toISOString()}] AI audio stream ended (isFinal)`);
-            if (silenceTimeoutRef.current) clearTimeout(silenceTimeoutRef.current);
+            console.log(`[${new Date().toISOString()}] Аудиопоток ИИ завершён (isFinal)`);
+            toggleMicrophone(true);
           } else {
             silenceTimeoutRef.current = setTimeout(() => {
-              if (isAIPlaying) {
-                console.log(`[${new Date().toISOString()}] AI audio stream ended (silence timeout)`);
+              if (isAIPlaying && audioQueueRef.current.length === 0) {
+                console.log(`[${new Date().toISOString()}] Аудиопоток ИИ завершён (тишина)`);
                 setIsAIPlaying(false);
+                setAIAudioData(null);
+                toggleMicrophone(true);
               }
             }, 1000);
           }
         }
 
         if (message.type === "user_transcript") {
-          console.log(`[${new Date().toISOString()}] User transcript received:`, message.user_transcription_event.user_transcript);
+          console.log(`[${new Date().toISOString()}] Транскрипция пользователя:`, message.user_transcription_event.user_transcript);
+          setIsUserSpeaking(true);
           setIsAIPlaying(false);
+          setTranscript((prev: TranscriptEntry[]) => [
+            ...prev,
+            {
+              role: "user",
+              message: message.user_transcription_event.user_transcript,
+              tool_calls: null,
+              tool_results: null,
+              feedback: null,
+              time_in_call_secs: 0,
+              conversation_turn_metrics: null,
+            },
+          ]);
+        }
+
+        if (message.type === "ai_transcript") {
+          console.log(`[${new Date().toISOString()}] Транскрипция ИИ:`, message.ai_transcription_event.ai_transcript);
+          setIsUserSpeaking(false);
+          setTranscript((prev: TranscriptEntry[]) => [
+            ...prev,
+            {
+              role: "agent",
+              message: message.ai_transcription_event.ai_transcript,
+              tool_calls: null,
+              tool_results: null,
+              feedback: null,
+              time_in_call_secs: 0,
+              conversation_turn_metrics: null,
+            },
+          ]);
         }
 
         if (message.type === "vad_score") {
-          console.log(`[${new Date().toISOString()}] VAD score received:`, message.vad_score_event.score);
+          console.log(`[${new Date().toISOString()}] VAD-оценка:`, message.vad_score_event.score);
+          // Понижаем порог для большей отзывчивости
+          setIsUserSpeaking(message.vad_score_event.score > 0.3);
         }
 
         if (message.type === "error") {
-          console.error(`[${new Date().toISOString()}] Server error:`, message.error_message);
+          console.error("Ошибка:", {
+            error: message.error_message,
+            timestamp: new Date().toISOString(),
+          });
         }
 
         if (message.type === "ping") {
-          console.log(`[${new Date().toISOString()}] Ping received, sending pong`);
+          console.log(`[${new Date().toISOString()}] Получен ping, отправляем pong`);
           websocketRef.current?.send(
             JSON.stringify({ type: "pong", event_id: message.ping_event.event_id })
           );
@@ -259,7 +365,8 @@ export function useWebSocketLogic(): WebSocketLogic {
       };
 
       websocketRef.current.onclose = (event) => {
-        console.log(`[${new Date().toISOString()}] WebSocket disconnected`, {
+        console.log("Отключено:", {
+          timestamp: new Date().toISOString(),
           code: event.code,
           reason: event.reason,
           wasClean: event.wasClean,
@@ -268,7 +375,10 @@ export function useWebSocketLogic(): WebSocketLogic {
         setAudioStream(null);
         setIsUserSpeaking(false);
         setIsAIPlaying(false);
-        setAIAudioElement(null);
+        setAIAudioData(null);
+        setUserAudioData(null);
+        audioQueueRef.current = [];
+        isPlayingQueueRef.current = false;
         if (silenceTimeoutRef.current) clearTimeout(silenceTimeoutRef.current);
         if (audioContextRef.current) {
           audioContextRef.current.close();
@@ -277,12 +387,15 @@ export function useWebSocketLogic(): WebSocketLogic {
       };
 
       websocketRef.current.onerror = (error) => {
-        console.error(`[${new Date().toISOString()}] WebSocket error:`, error);
+        console.error("Ошибка:", {
+          error,
+          timestamp: new Date().toISOString(),
+        });
         setStatus("disconnected");
         toast.error("Ошибка подключения к серверу. Проверьте agent_id или попробуйте позже.");
       };
     } catch (error) {
-      console.error("Failed to start conversation:", error);
+      console.error("Ошибка запуска разговора:", error);
       setStatus("disconnected");
       toast.error("Ошибка запуска сессии. Проверьте настройки и попробуйте снова.");
     }
@@ -305,7 +418,8 @@ export function useWebSocketLogic(): WebSocketLogic {
     audioStream,
     isUserSpeaking,
     isAIPlaying,
-    aiAudioElement,
+    aiAudioData,
+    userAudioData,
     startSession,
     endSession,
     setIsUserSpeaking,

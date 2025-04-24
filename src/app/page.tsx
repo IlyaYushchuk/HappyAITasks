@@ -2,26 +2,30 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Settings, XIcon } from "lucide-react";
+import dynamic from "next/dynamic";
+import { Settings } from "lucide-react";
 import CriteriaTable from "~/components/criteria-table";
 import SettingsModal from "~/components/settings-modal";
 import { Button } from "~/components/ui/button";
-import MicrophoneButton from "~/components/microphone-button";
-import TranscriptArea from "~/components/transcript-area";
 import useSettingsStore from "~/stores/useSettingsStore";
 import { useWebSocketLogic } from "~/lib/useWebSocketLogic";
+
+// Динамическая загрузка клиентских компонентов
+const MicrophoneButton = dynamic(() => import("~/components/microphone-button"), { ssr: false });
+const VoiceVisualizer = dynamic(() => import("~/components/AudioVisualizer"), { ssr: false });
+const TranscriptArea = dynamic(() => import("~/components/transcript-area"), { ssr: false });
 
 export default function Home() {
   const [isOpened, setIsOpened] = useState(false);
   const { scoreArray } = useSettingsStore();
 
-  // Используем хук для управления WebSocket и состояниями
   const {
     status,
     audioStream,
     isUserSpeaking,
     isAIPlaying,
-    aiAudioElement,
+    aiAudioData,
+    userAudioData,
     startSession,
     endSession,
     setIsUserSpeaking,
@@ -33,13 +37,6 @@ export default function Home() {
 
   return (
     <div className="flex min-h-screen flex-col bg-gray-50">
-      {/* <Button
-        onClick={() => setIsOpened(!isOpened)}
-        className="fixed left-3 top-4"
-        variant={"outline"}
-      >
-        <XIcon />
-      </Button> */}
       <header className="border-b border-gray-200 bg-gray-100">
         <div className="container mx-auto flex items-center justify-between px-4 py-4 sm:px-6 lg:px-8">
           <Link
@@ -61,8 +58,8 @@ export default function Home() {
           className={`flex items-start transition-all duration-700 ease-in-out ${
             isOpened ? "justify-between" : "justify-center"
           }`}
+          suppressHydrationWarning // Добавляем для динамических стилей
         >
-          {/* Left Column: CriteriaTable */}
           <div
             className={`overflow-hidden transition-all duration-700 ${
               isOpened || scoreArray.length > 0
@@ -73,7 +70,6 @@ export default function Home() {
             <CriteriaTable />
           </div>
 
-          {/* Right Column: Microphone and TranscriptArea */}
           <div
             className={`flex flex-col justify-center transition-all duration-700 ${
               isOpened || scoreArray.length > 0
@@ -81,16 +77,24 @@ export default function Home() {
                 : "w-full items-center px-96"
             }`}
           >
+            <VoiceVisualizer
+              userAudioData={userAudioData}
+              aiAudioData={aiAudioData}
+              isUserSpeaking={isUserSpeaking}
+              isAIPlaying={isAIPlaying}
+            />
             <MicrophoneButton
               status={status}
               audioStream={audioStream}
               isUserSpeaking={isUserSpeaking}
               isAIPlaying={isAIPlaying}
-              aiAudioElement={aiAudioElement}
+              aiAudioData={aiAudioData}
+              userAudioData={userAudioData}
               startSession={startSession}
               endSession={endSession}
               setIsUserSpeaking={setIsUserSpeaking}
             />
+            
             <TranscriptArea />
           </div>
         </div>

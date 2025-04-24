@@ -1,187 +1,182 @@
-import React, { useEffect, useRef } from "react";
+"use client";
 
-interface AudioVisualizerProps {
-  isActive: boolean;
-  stream: MediaStream | null;
-  aiAudioElement: HTMLAudioElement | null;
-  isUserSpeaking: boolean;
-  isAIPlaying: boolean;
-  onUserSpeakingChange: (isSpeaking: boolean) => void;
-  className?: string;
+import { useEffect, useRef } from "react";
+
+interface VoiceVisualizerProps {
+  userAudioData: Float32Array | null; // Данные аудио пользователя
+  aiAudioData: Float32Array | null; // Данные аудио ИИ
+  isUserSpeaking: boolean; // Флаг речи пользователя
+  isAIPlaying: boolean; // Флаг воспроизведения ИИ
 }
 
-const AudioVisualizer: React.FC<AudioVisualizerProps> = ({
-  isActive,
-  stream,
-  aiAudioElement,
+export default function VoiceVisualizer({
+  userAudioData,
+  aiAudioData,
   isUserSpeaking,
   isAIPlaying,
-  onUserSpeakingChange,
-  className,
-}) => {
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const animationRef = useRef<number | null>(null);
-  const audioContextRef = useRef<AudioContext | null>(null);
-  const analyserUserRef = useRef<AnalyserNode | null>(null);
-  const analyserAIRef = useRef<AnalyserNode | null>(null);
-  const sourceUserRef = useRef<MediaStreamAudioSourceNode | null>(null);
-  const sourceAIRef = useRef<MediaElementAudioSourceNode | null>(null);
-  const isInitializedRef = useRef<boolean>(false);
+}: VoiceVisualizerProps) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const animationFrameRef = useRef<number | null>(null);
+  const aiBarHeightsRef = useRef<number[]>([]); // Текущие высоты столбцов ИИ
+  const userBarHeightsRef = useRef<number[]>([]); // Текущие высоты столбцов пользователя
+  const targetAiBarHeightsRef = useRef<number[]>([]); // Целевые высоты ИИ
+  const targetUserBarHeightsRef = useRef<number[]>([]); // Целевые высоты пользователя
+  const aiDataBufferRef = useRef<Float32Array[]>([]); // Буфер последних данных ИИ
+  const userDataBufferRef = useRef<Float32Array[]>([]); // Буфер последних данных пользователя
 
-  // Инициализация аудио (микрофон и ИИ)
+  // Количество столбцов
+  const barCount = 20;
+  // Скорость сглаживания (0.03 = очень плавно)
+  const smoothingFactor = 0.03;
+  // Коэффициент масштабирования амплитуд
+  const amplitudeScale = 800;
+  // Размер буфера данных (усредняем 5 последних кадров)
+  const bufferSize = 5;
+
   useEffect(() => {
-    if (!stream || isInitializedRef.current) return;
-
-    const initializeAudio = async () => {
-      try {
-        audioContextRef.current = new AudioContext(); // Убрали webkitAudioContext
-
-        // Для пользователя (микрофон)
-        analyserUserRef.current = audioContextRef.current.createAnalyser();
-        analyserUserRef.current.fftSize = 256;
-        sourceUserRef.current = audioContextRef.current.createMediaStreamSource(stream);
-        sourceUserRef.current.connect(analyserUserRef.current);
-
-        // Для ИИ
-        analyserAIRef.current = audioContextRef.current.createAnalyser();
-        analyserAIRef.current.fftSize = 256;
-
-        isInitializedRef.current = true;
-      } catch (error) {
-        console.error("Failed to initialize audio context:", error);
-      }
-    };
-
-    initializeAudio();
-
-    return () => {
-      if (animationRef.current) {
-        cancelAnimationFrame(animationRef.current);
-      }
-      if (sourceUserRef.current) {
-        sourceUserRef.current.mediaStream.getTracks().forEach((track) => track.stop());
-      }
-    };
-  }, [stream]);
-
-  // Подключение аудиоэлемента ИИ
-  useEffect(() => {
-    if (!audioContextRef.current || !analyserAIRef.current || !aiAudioElement) return;
-
-    if (sourceAIRef.current) {
-      sourceAIRef.current.disconnect();
-    }
-
-    try {
-      sourceAIRef.current = audioContextRef.current.createMediaElementSource(aiAudioElement);
-      sourceAIRef.current.connect(analyserAIRef.current);
-      analyserAIRef.current.connect(audioContextRef.current.destination);
-    } catch (error) {
-      console.error("Failed to connect AI audio element:", error);
-    }
-
-    return () => {
-      if (sourceAIRef.current) {
-        sourceAIRef.current.disconnect();
-        sourceAIRef.current = null;
-      }
-    };
-  }, [aiAudioElement]);
-
-  // Детекция речи пользователя
-  useEffect(() => {
-    if (!analyserUserRef.current || !isActive) return;
-
-    const bufferLength = analyserUserRef.current.frequencyBinCount;
-    const dataArray = new Uint8Array(bufferLength);
-    let speaking = false;
-
-    const checkSpeaking = () => {
-      analyserUserRef.current!.getByteFrequencyData(dataArray);
-      const average = dataArray.reduce((sum, value) => sum + value, 0) / bufferLength;
-      const isSpeaking = average > 10;
-
-      if (isSpeaking !== speaking) {
-        speaking = isSpeaking;
-        onUserSpeakingChange(isSpeaking);
-      }
-
-      if (isActive) {
-        animationRef.current = requestAnimationFrame(checkSpeaking);
-      }
-    };
-
-    checkSpeaking();
-
-    return () => {
-      if (animationRef.current) {
-        cancelAnimationFrame(animationRef.current);
-      }
-    };
-  }, [isActive, onUserSpeakingChange]);
-
-  // Отрисовка визуализации
-  useEffect(() => {
-    if (!canvasRef.current || !analyserUserRef.current || !analyserAIRef.current || !isInitializedRef.current || !isActive) return;
-
     const canvas = canvasRef.current;
-    const ctx = canvas.getContext("2d")!;
-    const bufferLength = analyserUserRef.current.frequencyBinCount;
-    const dataArrayUser = new Uint8Array(bufferLength);
-    const dataArrayAI = new Uint8Array(bufferLength);
+    if (!canvas) return;
 
-    const draw = () => {
-      if (!isActive || (!isUserSpeaking && !isAIPlaying)) {
-        if (animationRef.current) {
-          cancelAnimationFrame(animationRef.current);
-          animationRef.current = null;
-        }
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    // Настраиваем Canvas
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = canvas.offsetWidth * dpr;
+    canvas.height = canvas.offsetHeight * dpr;
+    ctx.scale(dpr, dpr);
+
+    // Инициализируем массивы высот
+    aiBarHeightsRef.current = new Array(barCount).fill(0);
+    userBarHeightsRef.current = new Array(barCount).fill(0);
+    targetAiBarHeightsRef.current = new Array(barCount).fill(0);
+    targetUserBarHeightsRef.current = new Array(barCount).fill(0);
+    aiDataBufferRef.current = [];
+    userDataBufferRef.current = [];
+
+    // Функция для обработки и нормализации аудиоданных
+    const processAudioData = (
+      data: Float32Array | null,
+      buffer: Float32Array[],
+      targetHeights: number[],
+      isActive: boolean,
+      label: string
+    ) => {
+      if (!isActive || !data || data.length === 0) {
+        targetHeights.fill(0);
+        buffer.length = 0; // Очищаем буфер
+        console.log(`[${new Date().toISOString()}] ${label}: Данные отсутствуют или неактивно`);
         return;
       }
 
-      animationRef.current = requestAnimationFrame(draw);
+      // Отладка: логируем первые 10 значений
+      console.log(`[${new Date().toISOString()}] ${label}:`, data.slice(0, 10));
 
-      // Выбираем источник данных
-      const dataArray = isAIPlaying ? dataArrayAI : dataArrayUser;
-      const analyser = isAIPlaying ? analyserAIRef.current! : analyserUserRef.current!;
-      analyser.getByteFrequencyData(dataArray);
-
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-      const barWidth = (canvas.width / bufferLength) * 2.5;
-      let barHeight;
-      let x = 0;
-
-      // Устанавливаем цвет в зависимости от того, кто говорит
-      const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
-      if (isAIPlaying) {
-        gradient.addColorStop(0, "#ef4444"); // Красный (red-500)
-        gradient.addColorStop(1, "#b91c1c"); // Темно-красный (red-700)
-      } else {
-        gradient.addColorStop(0, "#3b82f6"); // Синий (blue-500)
-        gradient.addColorStop(1, "#1e40af"); // Темно-синий (blue-700)
+      // Добавляем данные в буфер
+      buffer.push(new Float32Array(data));
+      if (buffer.length > bufferSize) {
+        buffer.shift(); // Удаляем старые данные
       }
 
-      for (let i = 0; i < bufferLength; i++) {
-        barHeight = (dataArray[i] / 255) * canvas.height;
-        ctx.fillStyle = gradient;
-        ctx.fillRect(x, canvas.height - barHeight, barWidth, barHeight);
-        x += barWidth + 1;
+      // Усредняем данные из буфера
+      const smoothedData = new Float32Array(data.length);
+      for (let i = 0; i < data.length; i++) {
+        let sum = 0;
+        let count = 0;
+        for (const frame of buffer) {
+          if (i < frame.length) {
+            sum += frame[i];
+            count++;
+          }
+        }
+        smoothedData[i] = count > 0 ? sum / count : data[i];
+      }
+
+      // Берем подвыборку для столбцов
+      const step = Math.floor(smoothedData.length / barCount);
+      for (let i = 0; i < barCount; i++) {
+        let sum = 0;
+        const start = i * step;
+        const end = Math.min(start + step, smoothedData.length);
+        for (let j = start; j < end; j++) {
+          sum += Math.abs(smoothedData[j]);
+        }
+        const avg = sum / (end - start);
+        targetHeights[i] = Math.min(avg * amplitudeScale, canvas.height / 2 / dpr);
       }
     };
 
-    draw();
+    // Функция отрисовки гистограммы
+    const draw = () => {
+      if (!ctx || !canvas) return;
 
+      // Очищаем Canvas
+      ctx.clearRect(0, 0, canvas.width / dpr, canvas.height / dpr);
+
+      const barWidth = (canvas.width / dpr / barCount) * 0.8;
+      const gap = (canvas.width / dpr / barCount) * 0.2;
+
+      // Обновляем целевые высоты
+      processAudioData(
+        aiAudioData,
+        aiDataBufferRef.current,
+        targetAiBarHeightsRef.current,
+        isAIPlaying,
+        "ИИ"
+      );
+      processAudioData(
+        userAudioData,
+        userDataBufferRef.current,
+        targetUserBarHeightsRef.current,
+        isUserSpeaking || userAudioData?.some((v) => Math.abs(v) > 0.001), // Включаем, если есть данные
+        "Пользователь"
+      );
+
+      // Отрисовываем гистограмму ИИ (красная)
+      for (let i = 0; i < barCount; i++) {
+        aiBarHeightsRef.current[i] +=
+          (targetAiBarHeightsRef.current[i] - aiBarHeightsRef.current[i]) * smoothingFactor;
+
+        const x = i * (barWidth + gap);
+        const y = (canvas.height / dpr - aiBarHeightsRef.current[i]) / 2;
+        const height = aiBarHeightsRef.current[i];
+
+        ctx.fillStyle = "#dc2626"; // Красный для ИИ
+        ctx.fillRect(x, y, barWidth, height);
+      }
+
+      // Отрисовываем гистограмму пользователя (синяя)
+      for (let i = 0; i < barCount; i++) {
+        userBarHeightsRef.current[i] +=
+          (targetUserBarHeightsRef.current[i] - userBarHeightsRef.current[i]) * smoothingFactor;
+
+        const x = i * (barWidth + gap);
+        const y = (canvas.height / dpr - userBarHeightsRef.current[i]) / 2;
+        const height = userBarHeightsRef.current[i];
+
+        ctx.fillStyle = "#2563eb"; // Синий для пользователя
+        ctx.fillRect(x, y, barWidth, height);
+      }
+
+      // Продолжаем анимацию
+      animationFrameRef.current = requestAnimationFrame(draw);
+    };
+
+    // Запускаем анимацию
+    animationFrameRef.current = requestAnimationFrame(draw);
+
+    // Очистка
     return () => {
-      if (animationRef.current) {
-        cancelAnimationFrame(animationRef.current);
-        animationRef.current = null;
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
       }
     };
-  }, [isActive, isUserSpeaking, isAIPlaying]);
+  }, [aiAudioData, userAudioData, isAIPlaying, isUserSpeaking]);
 
-  return <canvas ref={canvasRef} className={className} width={1024} height={96} />;
-};
-
-export default AudioVisualizer;
+  return (
+    <canvas
+      ref={canvasRef}
+      className="mt-4 h-24 w-full max-w-[300px] rounded-md bg-gray-100"
+    />
+  );
+}

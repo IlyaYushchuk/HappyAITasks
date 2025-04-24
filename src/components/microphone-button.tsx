@@ -1,15 +1,21 @@
+/* eslint-disable @typescript-eslint/no-redundant-type-constituents */
+/* eslint-disable @typescript-eslint/no-unsafe-argument */
+/* eslint-disable @typescript-eslint/no-unsafe-return */
+/* eslint-disable @typescript-eslint/no-unsafe-member-access */
+/* eslint-disable @typescript-eslint/no-unsafe-assignment */
+/* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
 import { Mic, MicOff, Loader2 } from "lucide-react";
 import { Button } from "~/components/ui/button";
-import AudioVisualizer from "./AudioVisualizer"; 
 
 interface MicrophoneButtonProps {
   status: "disconnected" | "connecting" | "connected";
   audioStream: MediaStream | null;
   isUserSpeaking: boolean;
   isAIPlaying: boolean;
-  aiAudioElement: HTMLAudioElement | null;
+  aiAudioData: Float32Array | null;
+  userAudioData: Float32Array | null;
   startSession: () => Promise<void>;
   endSession: () => Promise<void>;
   setIsUserSpeaking: (isSpeaking: boolean) => void;
@@ -17,13 +23,8 @@ interface MicrophoneButtonProps {
 
 export default function MicrophoneButton({
   status,
-  audioStream,
-  isUserSpeaking,
-  isAIPlaying,
-  aiAudioElement,
   startSession,
   endSession,
-  setIsUserSpeaking,
 }: MicrophoneButtonProps) {
   const handleClick = async () => {
     if (status === "disconnected") {
@@ -33,25 +34,8 @@ export default function MicrophoneButton({
     }
   };
 
-  const handleUserSpeakingChange = (isSpeaking: boolean) => {
-    if (!isAIPlaying) {
-      setIsUserSpeaking(isSpeaking);
-    }
-  };
-
   return (
     <div className="flex flex-col items-center gap-4" style={{ width: "100%" }}>
-      {status === "connected" && (
-        <AudioVisualizer
-          isActive={status === "connected"}
-          stream={audioStream}
-          aiAudioElement={aiAudioElement}
-          isUserSpeaking={isUserSpeaking}
-          isAIPlaying={isAIPlaying}
-          onUserSpeakingChange={handleUserSpeakingChange}
-          className="w-full"
-        />
-      )}
       <Button
         onClick={handleClick}
         className={`h-16 w-full rounded-lg text-lg font-semibold shadow-md transition-all duration-300 ${

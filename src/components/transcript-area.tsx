@@ -1,14 +1,14 @@
 "use client";
 
 import { useRef, useEffect } from "react";
-import useSettingsStore from "~/stores/useSettingsStore";
+import useSettingsStore, { TranscriptEntry } from "~/stores/useSettingsStore";
 
 export default function TranscriptArea() {
   const { transcript } = useSettingsStore();
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    // Auto-scroll to the bottom whenever the transcript updates
+    // Автопрокрутка вниз при обновлении транскрипции
     if (containerRef.current) {
       containerRef.current.scrollTop = containerRef.current.scrollHeight;
     }
@@ -19,8 +19,8 @@ export default function TranscriptArea() {
       ref={containerRef}
       className="mt-4 max-h-full min-h-full w-full overflow-y-auto rounded-md border border-gray-200 bg-white p-4"
     >
-      {transcript && transcript.length > 0 ? (
-        transcript.map((entry, index) => (
+      {Array.isArray(transcript) && transcript.length > 0 ? (
+        transcript.map((entry: TranscriptEntry, index: number) => (
           <div
             key={index}
             className={`mb-4 flex ${
