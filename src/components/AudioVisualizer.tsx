@@ -25,13 +25,13 @@ export default function VoiceVisualizer({
   const userDataBufferRef = useRef<Float32Array[]>([]); // Буфер последних данных пользователя
 
   // Количество столбцов
-  const barCount = 20;
-  // Скорость сглаживания (0.03 = очень плавно)
-  const smoothingFactor = 0.03;
+  const barCount = 50;
+  // Скорость сглаживания (0.01 = максимально плавно)
+  const smoothingFactor = 0.005;
   // Коэффициент масштабирования амплитуд
-  const amplitudeScale = 800;
-  // Размер буфера данных (усредняем 5 последних кадров)
-  const bufferSize = 5;
+  const amplitudeScale = 1200;
+  // Размер буфера данных (усредняем 12 кадров)
+  const bufferSize = 12;
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -54,7 +54,7 @@ export default function VoiceVisualizer({
     aiDataBufferRef.current = [];
     userDataBufferRef.current = [];
 
-    // Функция для обработки и нормализации аудиоданных
+    // Функция для обработки аудиоданных с экспоненциальным сглаживанием
     const processAudioData = (
       data: Float32Array | null,
       buffer: Float32Array[],
@@ -64,32 +64,31 @@ export default function VoiceVisualizer({
     ) => {
       if (!isActive || !data || data.length === 0) {
         targetHeights.fill(0);
-        buffer.length = 0; // Очищаем буфер
+        buffer.length = 0;
         console.log(`[${new Date().toISOString()}] ${label}: Данные отсутствуют или неактивно`);
         return;
       }
 
-      // Отладка: логируем первые 10 значений
+      // Отладка: логируем первые 10 значений и состояние
       console.log(`[${new Date().toISOString()}] ${label}:`, data.slice(0, 10));
+      console.log(`[${new Date().toISOString()}] ${label} isActive:`, isActive);
 
       // Добавляем данные в буфер
       buffer.push(new Float32Array(data));
       if (buffer.length > bufferSize) {
-        buffer.shift(); // Удаляем старые данные
+        buffer.shift();
       }
 
-      // Усредняем данные из буфера
+      // Экспоненциальное скользящее среднее
       const smoothedData = new Float32Array(data.length);
-      for (let i = 0; i < data.length; i++) {
-        let sum = 0;
-        let count = 0;
-        for (const frame of buffer) {
-          if (i < frame.length) {
-            sum += frame[i];
-            count++;
-          }
+      const alpha = 0.1; // Вес новых данных (10%)
+      if (buffer.length === 1) {
+        smoothedData.set(data);
+      } else {
+        const prevData = buffer[buffer.length - 2] || data;
+        for (let i = 0; i < data.length; i++) {
+          smoothedData[i] = alpha * data[i] + (1 - alpha) * (prevData[i] || 0);
         }
-        smoothedData[i] = count > 0 ? sum / count : data[i];
       }
 
       // Берем подвыборку для столбцов
@@ -102,10 +101,11 @@ export default function VoiceVisualizer({
           sum += Math.abs(smoothedData[j]);
         }
         const avg = sum / (end - start);
-        targetHeights[i] = Math.min(avg * amplitudeScale, canvas.height / 2 / dpr);
+        targetHeights[i] = avg * amplitudeScale; // Без ограничения высоты
       }
     };
 
+    // Функция отрисовки гистограммы
     // Функция отрисовки гистограммы
     const draw = () => {
       if (!ctx || !canvas) return;
@@ -113,8 +113,8 @@ export default function VoiceVisualizer({
       // Очищаем Canvas
       ctx.clearRect(0, 0, canvas.width / dpr, canvas.height / dpr);
 
-      const barWidth = (canvas.width / dpr / barCount) * 0.8;
-      const gap = (canvas.width / dpr / barCount) * 0.2;
+      const barWidth = (canvas.width / dpr / barCount) * 0.6; // Тонкие столбцы
+      const gap = (canvas.width / dpr / barCount) * 0.4;
 
       // Обновляем целевые высоты
       processAudioData(
@@ -124,11 +124,12 @@ export default function VoiceVisualizer({
         isAIPlaying,
         "ИИ"
       );
+      // Показываем гистограмму пользователя только если есть данные и ИИ не говорит
       processAudioData(
         userAudioData,
         userDataBufferRef.current,
         targetUserBarHeightsRef.current,
-        isUserSpeaking || userAudioData?.some((v) => Math.abs(v) > 0.001), // Включаем, если есть данные
+        !isAIPlaying && userAudioData?.some((v) => Math.abs(v) > 0.0005),
         "Пользователь"
       );
 
@@ -138,8 +139,8 @@ export default function VoiceVisualizer({
           (targetAiBarHeightsRef.current[i] - aiBarHeightsRef.current[i]) * smoothingFactor;
 
         const x = i * (barWidth + gap);
-        const y = (canvas.height / dpr - aiBarHeightsRef.current[i]) / 2;
-        const height = aiBarHeightsRef.current[i];
+        const y = canvas.height / dpr - aiBarHeightsRef.current[i];
+        const height = Math.min(aiBarHeightsRef.current[i], canvas.height / dpr); // Ограничиваем верхом Canvas
 
         ctx.fillStyle = "#dc2626"; // Красный для ИИ
         ctx.fillRect(x, y, barWidth, height);
@@ -151,8 +152,8 @@ export default function VoiceVisualizer({
           (targetUserBarHeightsRef.current[i] - userBarHeightsRef.current[i]) * smoothingFactor;
 
         const x = i * (barWidth + gap);
-        const y = (canvas.height / dpr - userBarHeightsRef.current[i]) / 2;
-        const height = userBarHeightsRef.current[i];
+        const y = canvas.height / dpr - userBarHeightsRef.current[i];
+        const height = Math.min(userBarHeightsRef.current[i], canvas.height / dpr);
 
         ctx.fillStyle = "#2563eb"; // Синий для пользователя
         ctx.fillRect(x, y, barWidth, height);
@@ -176,7 +177,7 @@ export default function VoiceVisualizer({
   return (
     <canvas
       ref={canvasRef}
-      className="mt-4 h-24 w-full max-w-[300px] rounded-md bg-gray-100"
+      className="mt-4 mb-4 h-24 w-full rounded-md bg-transparent"
     />
   );
 }
