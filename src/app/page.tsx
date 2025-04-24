@@ -9,11 +9,23 @@ import { Button } from "~/components/ui/button";
 import MicrophoneButton from "~/components/microphone-button";
 import TranscriptArea from "~/components/transcript-area";
 import useSettingsStore from "~/stores/useSettingsStore";
+import { useWebSocketLogic } from "~/lib/useWebSocketLogic";
 
 export default function Home() {
   const [isOpened, setIsOpened] = useState(false);
-
   const { scoreArray } = useSettingsStore();
+
+  // Используем хук для управления WebSocket и состояниями
+  const {
+    status,
+    audioStream,
+    isUserSpeaking,
+    isAIPlaying,
+    aiAudioElement,
+    startSession,
+    endSession,
+    setIsUserSpeaking,
+  } = useWebSocketLogic();
 
   useEffect(() => {
     console.log("Score array:", scoreArray);
@@ -36,7 +48,6 @@ export default function Home() {
           >
             HappyAI
           </Link>
-          {/* Pass the state setter so that the modal can control isOpened */}
           <SettingsModal>
             <Button variant="outline" size="icon">
               <Settings className="h-4 w-4" />
@@ -46,7 +57,6 @@ export default function Home() {
       </header>
 
       <main className="container mx-auto flex-grow px-4 py-8 sm:px-6 lg:px-8">
-        {/* When criteria table is hidden, we change the justification to center the right side */}
         <div
           className={`flex items-start transition-all duration-700 ease-in-out ${
             isOpened ? "justify-between" : "justify-center"
@@ -71,8 +81,16 @@ export default function Home() {
                 : "w-full items-center px-96"
             }`}
           >
-
-            <MicrophoneButton />
+            <MicrophoneButton
+              status={status}
+              audioStream={audioStream}
+              isUserSpeaking={isUserSpeaking}
+              isAIPlaying={isAIPlaying}
+              aiAudioElement={aiAudioElement}
+              startSession={startSession}
+              endSession={endSession}
+              setIsUserSpeaking={setIsUserSpeaking}
+            />
             <TranscriptArea />
           </div>
         </div>
