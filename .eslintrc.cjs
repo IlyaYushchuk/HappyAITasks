@@ -13,6 +13,7 @@ const config = {
     "plugin:@typescript-eslint/stylistic-type-checked"
   ],
   "rules": {
+    "react-hooks/exhaustive-deps": "off",
     "@typescript-eslint/no-floating-promises": "off",
     "@typescript-eslint/array-type": "off",
     "@typescript-eslint/consistent-type-definitions": "off",

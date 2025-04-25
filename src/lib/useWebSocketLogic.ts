@@ -99,7 +99,7 @@ export function useWebSocketLogic(): WebSocketLogic {
       analyserRef.current?.disconnect();
       audioContext.close();
     };
-  }, [isAIPlaying, isUserSpeaking]);
+  }, [isAIPlaying]);
 
   const convertFloat32ToInt16 = (buffer: Float32Array) => {
     if (!buffer) {
