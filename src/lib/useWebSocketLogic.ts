@@ -80,9 +80,9 @@ export function useWebSocketLogic(): WebSocketLogic {
 
       const now = Date.now();
       if (now - lastAudioLogTimeRef.current >= 1000) {
-        console.log(`[${new Date().toISOString()}] Аудиосэмплы пользователя:`, dataArray.slice(0, 10));
-        console.log(`[${new Date().toISOString()}] isUserSpeaking: ${isUserSpeaking}, hasData: ${hasData}`);
-        lastAudioLogTimeRef.current = now;
+        void (async () => {
+          console.log(`[${new Date().toISOString()}] Отправлен аудиофрагмент пользователя`);
+        })();
       }
 
       const binary = convertFloat32ToInt16(inputBuffer);
@@ -132,61 +132,72 @@ export function useWebSocketLogic(): WebSocketLogic {
     return window.btoa(binary);
   };
 
-  const playPcmAudio = (base64Audio: string) => {
-    try {
-      const audioData = window.atob(base64Audio)
-      const pcmData = new Int16Array(audioData.length / 2);
-      for (let i = 0; i < audioData.length; i += 2) {
-        pcmData[i / 2] = (audioData.charCodeAt(i + 1) << 8) | audioData.charCodeAt(i);
-      }
-
-      const floatData = new Float32Array(pcmData.length);
-      for (let i = 0; i < pcmData.length; i++) {
-        floatData[i] = (pcmData[i] ?? 0) / 32768;
-      }
-
-      setAIAudioData(floatData);
-
-      if (!audioContextRef.current) {
-        audioContextRef.current = new AudioContext({ sampleRate: 16000 });
-      }
-
-      const audioBuffer = audioContextRef.current.createBuffer(1, floatData.length, 16000);
-      audioBuffer.getChannelData(0).set(floatData);
-      const source = audioContextRef.current.createBufferSource();
-      source.buffer = audioBuffer;
-      source.connect(audioContextRef.current.destination);
-      source.onended = () => {
-        console.log(`[${new Date().toISOString()}] Воспроизведение аудио ИИ завершено`);
+  const audioPlayerFunctions = useCallback(() => {
+    const playPcmAudio = (base64Audio: string) => {
+      try {
+        const audioData = window.atob(base64Audio);
+        const pcmData = new Int16Array(audioData.length / 2);
+        
+        for (let i = 0; i < audioData.length; i += 2) {
+          pcmData[i / 2] = (audioData.charCodeAt(i + 1) << 8) | audioData.charCodeAt(i);
+        }
+  
+        const floatData = new Float32Array(pcmData.length);
+        for (let i = 0; i < pcmData.length; i++) {
+          floatData[i] = (pcmData[i] ?? 0) / 32768;
+        }
+  
+        setAIAudioData(floatData);
+  
+        if (!audioContextRef.current) {
+          audioContextRef.current = new AudioContext({ sampleRate: 16000 });
+        }
+  
+        const audioBuffer = audioContextRef.current.createBuffer(1, floatData.length, 16000);
+        audioBuffer.getChannelData(0).set(floatData);
+        const source = audioContextRef.current.createBufferSource();
+        source.buffer = audioBuffer;
+        source.connect(audioContextRef.current.destination);
+        
+        source.onended = () => {
+          console.log(`[${new Date().toISOString()}] Воспроизведение аудио ИИ завершено`);
+          setIsAIPlaying(false);
+          setAIAudioData(null);
+          isPlayingQueueRef.current = false;
+          playNextInQueue();
+        };
+        
+        source.start();
+        setIsAIPlaying(true);
+        toggleMicrophone(false);
+        console.log(`[${new Date().toISOString()}] Воспроизведение аудио ИИ начато`);
+      } catch (error) {
+        console.error(`Ошибка воспроизведения:`, error);
         setIsAIPlaying(false);
         setAIAudioData(null);
+        toggleMicrophone(true);
         isPlayingQueueRef.current = false;
         playNextInQueue();
-      };
-      source.start();
-      setIsAIPlaying(true);
-      toggleMicrophone(false);
-      console.log(`[${new Date().toISOString()}] Воспроизведение аудио ИИ начато, размер: ${floatData.length} сэмплов`);
-    } catch (error) {
-      console.error(`[${new Date().toISOString()}] Ошибка воспроизведения PCM:`, error);
-      setIsAIPlaying(false);
-      setAIAudioData(null);
-      toggleMicrophone(true);
-      isPlayingQueueRef.current = false;
-      playNextInQueue();
-    }
-  };
+      }
+    };
+  
+    const playNextInQueue = () => {
+      if (isPlayingQueueRef.current || audioQueueRef.current.length === 0) return;
+      isPlayingQueueRef.current = true;
+      const nextAudio = audioQueueRef.current.shift();
+      if (nextAudio) {
+        void playPcmAudio(nextAudio);
+      } else {
+        isPlayingQueueRef.current = false;
+      }
+    };
+  
+    return { playNextInQueue, playPcmAudio };
+  }, [setAIAudioData, setIsAIPlaying, toggleMicrophone]);
+  
+  // Деструктуризация после вызова функции
+  const { playNextInQueue, playPcmAudio } = audioPlayerFunctions();
 
-  const playNextInQueue = useCallback(() => {
-    if (isPlayingQueueRef.current || audioQueueRef.current.length === 0) return;
-    isPlayingQueueRef.current = true;
-    const nextAudio = audioQueueRef.current.shift();
-    if (nextAudio) {
-      void playPcmAudio(nextAudio);
-    } else {
-      isPlayingQueueRef.current = false;
-    }
-  }, [playPcmAudio]);
 
   const fetchData = async () => {
     if (!conversationId) return { status: "error" };
@@ -252,7 +263,7 @@ export function useWebSocketLogic(): WebSocketLogic {
     } catch (error) {
       console.error("Ошибка анализа разговора:", error);
     }
-  }, [conversationId, setScoreArray, setTranscript]);
+  }, [conversationId, setScoreArray, setTranscript, fetchData]);
 
   const startSession = useCallback(async () => {
     try {
@@ -293,7 +304,7 @@ export function useWebSocketLogic(): WebSocketLogic {
 
           if (message.audio_event?.audio_base_64) {
             audioQueueRef.current.push(message.audio_event.audio_base_64);
-            playNextInQueue();
+            void playNextInQueue();
           }
 
           if (message.audio_event?.isFinal) {
