@@ -1,7 +1,8 @@
 "use client";
 
 import { useRef, useEffect } from "react";
-import useSettingsStore, { TranscriptEntry } from "~/stores/useSettingsStore";
+import useSettingsStore from "~/stores/useSettingsStore";
+import type {TranscriptEntry} from "~/stores/useSettingsStore";
 
 export default function TranscriptArea() {
   const { transcript } = useSettingsStore();

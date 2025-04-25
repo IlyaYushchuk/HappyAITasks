@@ -42,16 +42,16 @@ export function useWebSocketLogic(): WebSocketLogic {
   const isPlayingQueueRef = useRef(false);
   const lastAudioLogTimeRef = useRef(0);
 
-  const toggleMicrophone = (enabled: boolean) => {
+  const toggleMicrophone = useCallback((enabled: boolean) => {
     if (audioStream) {
       audioStream.getAudioTracks().forEach((track) => {
         track.enabled = enabled;
       });
       console.log(`[${new Date().toISOString()}] Микрофон ${enabled ? "включен" : "отключен"}`);
     }
-  };
+  }, [audioStream]);
 
-  const sendMicrophoneAudio = async (stream: MediaStream) => {
+  const sendMicrophoneAudio = useCallback(async (stream: MediaStream) => {
     if (!websocketRef.current) return;
 
     const audioContext = new AudioContext({ sampleRate: 16000 });
@@ -88,7 +88,13 @@ export function useWebSocketLogic(): WebSocketLogic {
       const binary = convertFloat32ToInt16(inputBuffer);
       const base64Audio = arrayBufferToBase64(binary);
       if (websocketRef.current?.readyState === WebSocket.OPEN) {
-        websocketRef.current.send(JSON.stringify({ user_audio_chunk: base64Audio }));
+        void (async () => {
+          try {
+            websocketRef.current?.send(JSON.stringify({ user_audio_chunk: base64Audio }));
+          } catch (error) {
+            console.error('Ошибка отправки аудио:', error);
+          }
+        })();
         if (now - lastAudioLogTimeRef.current >= 1000) {
           console.log(`[${new Date().toISOString()}] Отправлен аудиофрагмент пользователя`);
         }
@@ -101,7 +107,7 @@ export function useWebSocketLogic(): WebSocketLogic {
       analyserRef.current?.disconnect();
       audioContext.close();
     };
-  };
+  }, [isAIPlaying, isUserSpeaking]);
 
   const convertFloat32ToInt16 = (buffer: Float32Array) => {
     if (!buffer) {
@@ -123,7 +129,7 @@ export function useWebSocketLogic(): WebSocketLogic {
     for (let i = 0; i < bytes.byteLength; i++) {
       binary += String.fromCharCode(bytes[i] ?? 0);
     }
-    return btoa(binary);
+    return window.btoa(binary);
   };
 
   const playPcmAudio = (base64Audio: string) => {
@@ -136,7 +142,7 @@ export function useWebSocketLogic(): WebSocketLogic {
 
       const floatData = new Float32Array(pcmData.length);
       for (let i = 0; i < pcmData.length; i++) {
-        floatData[i] = (pcmData[i]??0) / 32768;
+        floatData[i] = (pcmData[i] ?? 0) / 32768;
       }
 
       setAIAudioData(floatData);
@@ -180,7 +186,7 @@ export function useWebSocketLogic(): WebSocketLogic {
     } else {
       isPlayingQueueRef.current = false;
     }
-  }, []);
+  }, [playPcmAudio]);
 
   const fetchData = async () => {
     if (!conversationId) return { status: "error" };
@@ -203,7 +209,7 @@ export function useWebSocketLogic(): WebSocketLogic {
     return data;
   };
 
-  const analyzeConversation = async () => {
+  const analyzeConversation = useCallback(async () => {
     try {
       await new Promise((resolve) => { setTimeout(resolve, 1000); });
       const data = await fetchData();
@@ -246,7 +252,7 @@ export function useWebSocketLogic(): WebSocketLogic {
     } catch (error) {
       console.error("Ошибка анализа разговора:", error);
     }
-  };
+  }, [conversationId, setScoreArray, setTranscript]);
 
   const startSession = useCallback(async () => {
     try {
