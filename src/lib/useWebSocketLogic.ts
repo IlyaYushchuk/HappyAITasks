@@ -4,7 +4,7 @@
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { useCallback, useState, useRef } from "react";
+import { useCallback, useState, useRef, useMemo } from "react";
 import { env } from "~/env";
 import useSettingsStore from "~/stores/useSettingsStore";
 import type { TranscriptEntry } from "~/stores/useSettingsStore";
@@ -132,10 +132,10 @@ export function useWebSocketLogic(): WebSocketLogic {
     return window.btoa(binary);
   };
 
-  const audioPlayerFunctions = useCallback(() => {
+  const { playNextInQueue, playPcmAudio } = useMemo(() => {
     const playPcmAudio = (base64Audio: string) => {
       try {
-        const audioData = window.atob(base64Audio);
+        const audioData = globalThis.atob(base64Audio);
         const pcmData = new Int16Array(audioData.length / 2);
         
         for (let i = 0; i < audioData.length; i += 2) {
@@ -163,8 +163,8 @@ export function useWebSocketLogic(): WebSocketLogic {
           console.log(`[${new Date().toISOString()}] Воспроизведение аудио ИИ завершено`);
           setIsAIPlaying(false);
           setAIAudioData(null);
-          isPlayingQueueRef.current = false;
-          playNextInQueue();
+          isPlayingQueueRef.current ??= false;
+          void playNextInQueue();
         };
         
         source.start();
@@ -177,7 +177,7 @@ export function useWebSocketLogic(): WebSocketLogic {
         setAIAudioData(null);
         toggleMicrophone(true);
         isPlayingQueueRef.current = false;
-        playNextInQueue();
+        void playNextInQueue();
       }
     };
   
@@ -194,9 +194,6 @@ export function useWebSocketLogic(): WebSocketLogic {
   
     return { playNextInQueue, playPcmAudio };
   }, [setAIAudioData, setIsAIPlaying, toggleMicrophone]);
-  
-  // Деструктуризация после вызова функции
-  const { playNextInQueue, playPcmAudio } = audioPlayerFunctions();
 
 
   const fetchData = async () => {
