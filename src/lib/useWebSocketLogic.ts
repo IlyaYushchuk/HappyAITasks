@@ -32,7 +32,9 @@ export function useWebSocketLogic(): WebSocketLogic {
   const [status, setStatus] = useState<"disconnected" | "connecting" | "connected">("disconnected");
   const websocketRef = useRef<WebSocket | null>(null);
   const silenceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const audioProcessorRef = useRef<() => void>(() => {});
+  const audioProcessorRef = useRef<() => void>(() => {
+    console.log('Audio processor not initialized yet');
+  });
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const audioQueueRef = useRef<string[]>([]);
@@ -187,13 +189,13 @@ export function useWebSocketLogic(): WebSocketLogic {
     });
 
     if (!response.ok) {
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+      await new Promise((resolve) => { setTimeout(resolve, 1000); });
       return await fetchData();
     }
 
     const data = await response.json();
     if (data.status === "processing") {
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+      await new Promise((resolve) => { setTimeout(resolve, 1000); });
       return await fetchData();
     }
     console.log("Анализ разговора:", data);
@@ -202,7 +204,7 @@ export function useWebSocketLogic(): WebSocketLogic {
 
   const analyzeConversation = async () => {
     try {
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+      await new Promise((resolve) => { setTimeout(resolve, 1000); });
       const data = await fetchData();
       if (!data.transcript) return;
 
@@ -262,12 +264,19 @@ export function useWebSocketLogic(): WebSocketLogic {
         setStatus("connected");
         sendMicrophoneAudio(stream);
 
-        setInterval(() => {
+        const intervalId = setInterval(() => {
           if (websocketRef.current?.readyState === WebSocket.OPEN) {
-            websocketRef.current.send(JSON.stringify({ type: "keep_alive" }));
-            console.log(`[${new Date().toISOString()}] Отправлен keep_alive`);
+            void (async () => {
+              try {
+                websocketRef.current?.send(JSON.stringify({ type: "keep_alive" }));
+                console.log(`[${new Date().toISOString()}] Отправлен keep_alive`);
+              } catch (error) {
+                console.error('Ошибка отправки keep_alive:', error);
+              }
+            })();
           }
         }, 5000);
+        
       };
 
       websocketRef.current.onmessage = (event) => {
@@ -412,7 +421,12 @@ export function useWebSocketLogic(): WebSocketLogic {
     }
     audioProcessorRef.current();
     toast.loading("Анализируем диалог...");
-    await analyzeConversation();
+    try {
+      await analyzeConversation();
+    } catch (error) {
+      console.error('Ошибка анализа разговора:', error);
+      toast.error('Не удалось проанализировать диалог');
+    }
   }, [audioStream]);
 
   return {
