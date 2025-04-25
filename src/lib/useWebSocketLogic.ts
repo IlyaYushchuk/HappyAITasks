@@ -6,7 +6,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useCallback, useState, useRef } from "react";
 import { env } from "~/env";
-import useSettingsStore, { TranscriptEntry } from "~/stores/useSettingsStore";
+import useSettingsStore from "~/stores/useSettingsStore";
+import type { TranscriptEntry } from "~/stores/useSettingsStore";
 import toast from "react-hot-toast";
 
 interface WebSocketLogic {
@@ -120,14 +121,14 @@ export function useWebSocketLogic(): WebSocketLogic {
     const bytes = new Uint8Array(buffer);
     let binary = "";
     for (let i = 0; i < bytes.byteLength; i++) {
-      binary += String.fromCharCode(bytes[i]??0);
+      binary += String.fromCharCode(bytes[i] ?? 0);
     }
     return btoa(binary);
   };
 
   const playPcmAudio = (base64Audio: string) => {
     try {
-      const audioData = atob(base64Audio);
+      const audioData = window.atob(base64Audio)
       const pcmData = new Int16Array(audioData.length / 2);
       for (let i = 0; i < audioData.length; i += 2) {
         pcmData[i / 2] = (audioData.charCodeAt(i + 1) << 8) | audioData.charCodeAt(i);
@@ -170,16 +171,16 @@ export function useWebSocketLogic(): WebSocketLogic {
     }
   };
 
-  const playNextInQueue = () => {
+  const playNextInQueue = useCallback(() => {
     if (isPlayingQueueRef.current || audioQueueRef.current.length === 0) return;
     isPlayingQueueRef.current = true;
     const nextAudio = audioQueueRef.current.shift();
     if (nextAudio) {
-      playPcmAudio(nextAudio);
+      void playPcmAudio(nextAudio);
     } else {
       isPlayingQueueRef.current = false;
     }
-  };
+  }, []);
 
   const fetchData = async () => {
     if (!conversationId) return { status: "error" };
@@ -262,21 +263,7 @@ export function useWebSocketLogic(): WebSocketLogic {
           timestamp: new Date().toISOString(),
         });
         setStatus("connected");
-        sendMicrophoneAudio(stream);
-
-        const intervalId = setInterval(() => {
-          if (websocketRef.current?.readyState === WebSocket.OPEN) {
-            void (async () => {
-              try {
-                websocketRef.current?.send(JSON.stringify({ type: "keep_alive" }));
-                console.log(`[${new Date().toISOString()}] Отправлен keep_alive`);
-              } catch (error) {
-                console.error('Ошибка отправки keep_alive:', error);
-              }
-            })();
-          }
-        }, 5000);
-        
+        void sendMicrophoneAudio(stream);       
       };
 
       websocketRef.current.onmessage = (event) => {
@@ -369,9 +356,13 @@ export function useWebSocketLogic(): WebSocketLogic {
 
         if (message.type === "ping") {
           console.log(`[${new Date().toISOString()}] Получен ping, отправляем pong`);
-          websocketRef.current?.send(
-            JSON.stringify({ type: "pong", event_id: message.ping_event.event_id })
-          );
+          void (async () => {
+            try {
+              websocketRef.current?.send(JSON.stringify({ type: "pong", event_id: message.ping_event.event_id }));
+            } catch (error) {
+              console.error('Ошибка отправки pong:', error);
+            }
+          })();
         }
       };
 
@@ -410,7 +401,7 @@ export function useWebSocketLogic(): WebSocketLogic {
       setStatus("disconnected");
       toast.error("Ошибка запуска сессии. Проверьте настройки и попробуйте снова.");
     }
-  }, []);
+  }, [isAIPlaying, playNextInQueue, sendMicrophoneAudio, setTranscript, toggleMicrophone]);
 
   const endSession = useCallback(async () => {
     if (audioStream) {
@@ -427,7 +418,7 @@ export function useWebSocketLogic(): WebSocketLogic {
       console.error('Ошибка анализа разговора:', error);
       toast.error('Не удалось проанализировать диалог');
     }
-  }, [audioStream]);
+  }, [audioStream, analyzeConversation]);
 
   return {
     status,
