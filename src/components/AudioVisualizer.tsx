@@ -47,10 +47,10 @@ export default function VoiceVisualizer({
     ctx.scale(dpr, dpr);
 
     // Инициализируем массивы высот
-    aiBarHeightsRef.current = new Array(barCount).fill(0);
-    userBarHeightsRef.current = new Array(barCount).fill(0);
-    targetAiBarHeightsRef.current = new Array(barCount).fill(0);
-    targetUserBarHeightsRef.current = new Array(barCount).fill(0);
+    aiBarHeightsRef.current = new Array<number>(barCount).fill(0);
+    userBarHeightsRef.current = new Array<number>(barCount).fill(0);
+    targetAiBarHeightsRef.current = new Array<number>(barCount).fill(0);
+    targetUserBarHeightsRef.current = new Array<number>(barCount).fill(0);
     aiDataBufferRef.current = [];
     userDataBufferRef.current = [];
 
@@ -85,10 +85,10 @@ export default function VoiceVisualizer({
       if (buffer.length === 1) {
         smoothedData.set(data);
       } else {
-        const prevData = buffer[buffer.length - 2] || data;
+        const prevData = buffer[buffer.length - 2] ?? data;
         for (let i = 0; i < data.length; i++) {
           const currentValue = data[i] ?? 0;
-          smoothedData[i] = alpha * currentValue + (1 - alpha) * (prevData[i] || 0);
+          smoothedData[i] = alpha * currentValue + (1 - alpha) * (prevData[i] ?? 0);
         }
       }
 

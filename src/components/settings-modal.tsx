@@ -54,8 +54,8 @@ export default function SettingsModal({
           // Assuming the data structure is:
           // { conversation_config: { agent: { first_message: string, prompt: { prompt: string } } } }
           const agent = data.conversation_config?.agent;
-          setFirstMessage(agent?.first_message || "");
-          setSystemPrompt(agent?.prompt?.prompt || "");
+          setFirstMessage(agent?.first_message ?? "");
+          setSystemPrompt(agent?.prompt?.prompt ?? "");
         })
         .catch((error) => {
           console.error("Error fetching agent data:", error);

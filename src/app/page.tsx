@@ -16,7 +16,7 @@ const VoiceVisualizer = dynamic(() => import("~/components/AudioVisualizer"), { 
 const TranscriptArea = dynamic(() => import("~/components/transcript-area"), { ssr: false });
 
 export default function Home() {
-  const [isOpened, setIsOpened] = useState(false);
+  const [isOpened] = useState(false);
   const { scoreArray } = useSettingsStore();
 
   const {

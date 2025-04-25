@@ -209,12 +209,12 @@ export function useWebSocketLogic(): WebSocketLogic {
       const transcriptArray: TranscriptEntry[] = Array.isArray(data.transcript)
         ? data.transcript.map((item: any) => ({
             role: item.role === "ai" ? "agent" : item.role,
-            message: item.message || String(item.text || ""),
-            tool_calls: item.tool_calls || null,
-            tool_results: item.tool_results || null,
-            feedback: item.feedback || null,
-            time_in_call_secs: item.time_in_call_secs || 0,
-            conversation_turn_metrics: item.conversation_turn_metrics || null,
+            message: item.message ?? String(item.text ?? ""),
+            tool_calls: item.tool_calls ?? null,
+            tool_results: item.tool_results ?? null,
+            feedback: item.feedback ?? null,
+            time_in_call_secs: item.time_in_call_secs ?? 0,
+            conversation_turn_metrics: item.conversation_turn_metrics ?? null,
           }))
         : [
             {
@@ -273,7 +273,7 @@ export function useWebSocketLogic(): WebSocketLogic {
       websocketRef.current.onmessage = (event) => {
         const message = JSON.parse(event.data);
         console.log("Сообщение:", {
-          source: message.source || (message.type === "audio" ? "ai" : "unknown"),
+          source: message.source ?? (message.type === "audio" ? "ai" : "unknown"),
           message: message,
           timestamp: new Date().toISOString(),
           rawMessage: message,
