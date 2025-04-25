@@ -90,7 +90,7 @@ export function useWebSocketLogic(): WebSocketLogic {
       if (websocketRef.current?.readyState === WebSocket.OPEN) {
         void (async () => {
           try {
-            websocketRef.current?.send(JSON.stringify({ user_audio_chunk: base64Audio }));
+            void websocketRef.current?.send(JSON.stringify({ user_audio_chunk: base64Audio }));
           } catch (error) {
             console.error('Ошибка отправки аудио:', error);
           }
@@ -135,6 +135,9 @@ export function useWebSocketLogic(): WebSocketLogic {
   const { playNextInQueue, playPcmAudio } = useMemo(() => {
     const playPcmAudio = (base64Audio: string) => {
       try {
+        if (typeof globalThis.atob !== 'function') {
+          throw new Error('atob is not available in this environment');
+        }
         const audioData = globalThis.atob(base64Audio);
         const pcmData = new Int16Array(audioData.length / 2);
         
@@ -370,7 +373,7 @@ export function useWebSocketLogic(): WebSocketLogic {
           console.log(`[${new Date().toISOString()}] Получен ping, отправляем pong`);
           void (async () => {
             try {
-              websocketRef.current?.send(JSON.stringify({ type: "pong", event_id: message.ping_event.event_id }));
+              void websocketRef.current?.send(JSON.stringify({ type: "pong", event_id: message.ping_event.event_id }));
             } catch (error) {
               console.error('Ошибка отправки pong:', error);
             }
