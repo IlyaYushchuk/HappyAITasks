@@ -87,7 +87,8 @@ export default function VoiceVisualizer({
       } else {
         const prevData = buffer[buffer.length - 2] || data;
         for (let i = 0; i < data.length; i++) {
-          smoothedData[i] = alpha * data[i] + (1 - alpha) * (prevData[i] || 0);
+          const currentValue = data[i] ?? 0;
+          smoothedData[i] = alpha * currentValue + (1 - alpha) * (prevData[i] || 0);
         }
       }
 
@@ -98,7 +99,8 @@ export default function VoiceVisualizer({
         const start = i * step;
         const end = Math.min(start + step, smoothedData.length);
         for (let j = start; j < end; j++) {
-          sum += Math.abs(smoothedData[j]);
+          const currentSmoothedData = smoothedData[j] ?? 0;
+          sum += Math.abs(currentSmoothedData);
         }
         const avg = sum / (end - start);
         targetHeights[i] = avg * amplitudeScale; // Без ограничения высоты
@@ -129,32 +131,45 @@ export default function VoiceVisualizer({
         userAudioData,
         userDataBufferRef.current,
         targetUserBarHeightsRef.current,
-        !isAIPlaying && userAudioData?.some((v) => Math.abs(v) > 0.0005),
+        !isAIPlaying && (userAudioData ? userAudioData.some((v) => Math.abs(v) > 0.0005) : false),
         "Пользователь"
       );
 
       // Отрисовываем гистограмму ИИ (красная)
       for (let i = 0; i < barCount; i++) {
-        aiBarHeightsRef.current[i] +=
-          (targetAiBarHeightsRef.current[i] - aiBarHeightsRef.current[i]) * smoothingFactor;
-
+        const currentAiHeight = aiBarHeightsRef.current[i] ?? 0;
+        const targetAiHeight = targetAiBarHeightsRef.current[i] ?? 0;
+        
+        // Вычисляем новую высоту
+        const newHeight = currentAiHeight + (targetAiHeight - currentAiHeight) * smoothingFactor;
+        aiBarHeightsRef.current[i] = newHeight;
+      
+        // Рассчитываем позицию и размеры
         const x = i * (barWidth + gap);
-        const y = canvas.height / dpr - aiBarHeightsRef.current[i];
-        const height = Math.min(aiBarHeightsRef.current[i], canvas.height / dpr); // Ограничиваем верхом Canvas
-
+        const y = canvas.height / dpr - newHeight;
+        const height = Math.min(newHeight, canvas.height / dpr); // Ограничиваем верхом Canvas
+      
+        // Рисуем столбец
         ctx.fillStyle = "#dc2626"; // Красный для ИИ
         ctx.fillRect(x, y, barWidth, height);
       }
 
       // Отрисовываем гистограмму пользователя (синяя)
       for (let i = 0; i < barCount; i++) {
-        userBarHeightsRef.current[i] +=
-          (targetUserBarHeightsRef.current[i] - userBarHeightsRef.current[i]) * smoothingFactor;
-
+        // Защищенное получение значений (с заменой undefined на 0)
+        const currentHeight = userBarHeightsRef.current[i] ?? 0;
+        const targetHeight = targetUserBarHeightsRef.current[i] ?? 0;
+        
+        // Вычисление новой высоты
+        const newHeight = currentHeight + (targetHeight - currentHeight) * smoothingFactor;
+        userBarHeightsRef.current[i] = newHeight;
+      
+        // Расчет позиции и размеров
         const x = i * (barWidth + gap);
-        const y = canvas.height / dpr - userBarHeightsRef.current[i];
-        const height = Math.min(userBarHeightsRef.current[i], canvas.height / dpr);
-
+        const y = canvas.height / dpr - newHeight;
+        const height = Math.min(newHeight, canvas.height / dpr);
+      
+        // Отрисовка столбца
         ctx.fillStyle = "#2563eb"; // Синий для пользователя
         ctx.fillRect(x, y, barWidth, height);
       }
