@@ -108,7 +108,8 @@ export function useWebSocketLogic(): WebSocketLogic {
     const len = buffer.length;
     const result = new Int16Array(len);
     for (let i = 0; i < len; i++) {
-      result[i] = Math.max(-32768, Math.min(32767, buffer[i] * 32768));
+      const currentBufferElement = buffer[i] ?? 0;
+      result[i] = Math.max(-32768, Math.min(32767, currentBufferElement * 32768));
     }
     return result.buffer;
   };
@@ -117,7 +118,7 @@ export function useWebSocketLogic(): WebSocketLogic {
     const bytes = new Uint8Array(buffer);
     let binary = "";
     for (let i = 0; i < bytes.byteLength; i++) {
-      binary += String.fromCharCode(bytes[i]);
+      binary += String.fromCharCode(bytes[i]??0);
     }
     return btoa(binary);
   };
@@ -132,7 +133,7 @@ export function useWebSocketLogic(): WebSocketLogic {
 
       const floatData = new Float32Array(pcmData.length);
       for (let i = 0; i < pcmData.length; i++) {
-        floatData[i] = pcmData[i] / 32768;
+        floatData[i] = (pcmData[i]??0) / 32768;
       }
 
       setAIAudioData(floatData);
@@ -312,35 +313,36 @@ export function useWebSocketLogic(): WebSocketLogic {
           console.log(`[${new Date().toISOString()}] Транскрипция пользователя:`, message.user_transcription_event.user_transcript);
           setIsUserSpeaking(true);
           setIsAIPlaying(false);
-          setTranscript((prev: TranscriptEntry[]) => [
-            ...prev,
-            {
-              role: "user",
-              message: message.user_transcription_event.user_transcript,
-              tool_calls: null,
-              tool_results: null,
-              feedback: null,
-              time_in_call_secs: 0,
-              conversation_turn_metrics: null,
-            },
-          ]);
+          
+          const newEntry: TranscriptEntry = {
+            role: "user",
+            message: message.user_transcription_event.user_transcript,
+            tool_calls: null,
+            tool_results: null,
+            feedback: null,
+            time_in_call_secs: 0,
+            conversation_turn_metrics: null,
+          };
+          const updatedTranscript = [...message.user_transcription_event.user_transcript, newEntry];
+          setTranscript(updatedTranscript);
         }
 
         if (message.type === "ai_transcript") {
           console.log(`[${new Date().toISOString()}] Транскрипция ИИ:`, message.ai_transcription_event.ai_transcript);
           setIsUserSpeaking(false);
-          setTranscript((prev: TranscriptEntry[]) => [
-            ...prev,
-            {
-              role: "agent",
-              message: message.ai_transcription_event.ai_transcript,
-              tool_calls: null,
-              tool_results: null,
-              feedback: null,
-              time_in_call_secs: 0,
-              conversation_turn_metrics: null,
-            },
-          ]);
+          
+          const newEntry: TranscriptEntry = {
+            role: "agent",
+            message: message.ai_transcription_event.ai_transcript,
+            tool_calls: null,
+            tool_results: null,
+            feedback: null,
+            time_in_call_secs: 0,
+            conversation_turn_metrics: null,
+          };
+          
+          const updatedTranscript = [...message.ai_transcription_event.ai_transcript, newEntry];
+          setTranscript(updatedTranscript);
         }
 
         if (message.type === "vad_score") {
