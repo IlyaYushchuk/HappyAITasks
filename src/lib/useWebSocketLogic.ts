@@ -125,6 +125,7 @@ export function useWebSocketLogic(): WebSocketLogic {
   };
 
   const { playNextInQueue, playPcmAudio } = useMemo(() => {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const playPcmAudio = (base64Audio: string) => {
       try {
         if (typeof globalThis.atob !== 'function') {
