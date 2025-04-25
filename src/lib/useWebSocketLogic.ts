@@ -128,7 +128,7 @@ export function useWebSocketLogic(): WebSocketLogic {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const playPcmAudio = (base64Audio: string) => {
       try {
-      
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-call
         const audioData = (globalThis.atob as (data: string) => string)(base64Audio);
         const pcmData = new Int16Array(audioData.length / 2);
         
