@@ -216,6 +216,7 @@ export function useWebSocketLogic(): WebSocketLogic {
       if (!data.transcript) return;
 
       const transcriptArray: TranscriptEntry[] = Array.isArray(data.transcript)
+       // eslint-disable-next-line @typescript-eslint/no-unsafe-call
         ? data.transcript.map((item: any) => ({
             role: item.role === "ai" ? "agent" : item.role,
             message: item.message ?? String(item.text ?? ""),
