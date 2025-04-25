@@ -88,13 +88,11 @@ export function useWebSocketLogic(): WebSocketLogic {
       const binary = convertFloat32ToInt16(inputBuffer);
       const base64Audio = arrayBufferToBase64(binary);
       if (websocketRef.current?.readyState === WebSocket.OPEN) {
-        void (async () => {
-          try {
-            void websocketRef.current?.send(JSON.stringify({ user_audio_chunk: base64Audio }));
-          } catch (error) {
-            console.error('Ошибка отправки аудио:', error);
-          }
-        })();
+        void Promise.resolve(
+          websocketRef.current?.send(JSON.stringify({ user_audio_chunk: base64Audio }))
+        ).catch((error) => {
+          console.error('Ошибка отправки аудио:', error);
+        });
         if (now - lastAudioLogTimeRef.current >= 1000) {
           console.log(`[${new Date().toISOString()}] Отправлен аудиофрагмент пользователя`);
         }
