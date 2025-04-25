@@ -80,19 +80,13 @@ export function useWebSocketLogic(): WebSocketLogic {
 
       const now = Date.now();
       if (now - lastAudioLogTimeRef.current >= 1000) {
-        void (async () => {
-          console.log(`[${new Date().toISOString()}] Отправлен аудиофрагмент пользователя`);
-        })();
+        console.log(`[${new Date().toISOString()}] Отправлен аудиофрагмент пользователя`);
       }
 
       const binary = convertFloat32ToInt16(inputBuffer);
       const base64Audio = arrayBufferToBase64(binary);
       if (websocketRef.current?.readyState === WebSocket.OPEN) {
-        void Promise.resolve(
-          websocketRef.current?.send(JSON.stringify({ user_audio_chunk: base64Audio }))
-        ).catch((error) => {
-          console.error('Ошибка отправки аудио:', error);
-        });
+        websocketRef.current?.send(JSON.stringify({ user_audio_chunk: base64Audio }));
         if (now - lastAudioLogTimeRef.current >= 1000) {
           console.log(`[${new Date().toISOString()}] Отправлен аудиофрагмент пользователя`);
         }
