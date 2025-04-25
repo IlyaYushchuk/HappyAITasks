@@ -128,10 +128,8 @@ export function useWebSocketLogic(): WebSocketLogic {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const playPcmAudio = (base64Audio: string) => {
       try {
-        if (typeof globalThis.atob !== 'function') {
-          throw new Error('atob is not available in this environment');
-        }
-        const audioData = globalThis.atob(base64Audio);
+      
+        const audioData = (globalThis.atob as (data: string) => string)(base64Audio);
         const pcmData = new Int16Array(audioData.length / 2);
         
         for (let i = 0; i < audioData.length; i += 2) {
