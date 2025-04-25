@@ -149,10 +149,8 @@ export function useWebSocketLogic(): WebSocketLogic {
   
         setAIAudioData(floatData);
   
-        if (!audioContextRef.current) {
-          audioContextRef.current ??= new AudioContext({ sampleRate: 16000 });
-        }
-  
+        audioContextRef.current ??= new AudioContext({ sampleRate: 16000 });
+
         const audioBuffer = audioContextRef.current.createBuffer(1, floatData.length, 16000);
         audioBuffer.getChannelData(0).set(floatData);
         const source = audioContextRef.current.createBufferSource();
