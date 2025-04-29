@@ -15,7 +15,6 @@ export default function VoiceInteraction() {
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [dimensions, setDimensions] = useState({ width: 300, height: 100 });
   const [userAmplitude, setUserAmplitude] = useState<number[]>([]);
-  const [isAgentSpeaking, setIsAgentSpeaking] = useState(false); // Обход для isSpeaking
   const containerRef = useRef<HTMLDivElement>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
@@ -27,8 +26,6 @@ export default function VoiceInteraction() {
     onDisconnect: () => console.log("Disconnected"),
     onMessage: (message: any) => {
       console.log("Message received:", message);
-      setIsAgentSpeaking(true);
-      setTimeout(() => setIsAgentSpeaking(false), 1500); // Уменьшено до 1.5 секунд для более быстрой реакции
     },
     onError: (error: any) => {
       console.error("ElevenLabs error:", error);
@@ -42,17 +39,16 @@ export default function VoiceInteraction() {
       "VoiceInteraction: status =",
       conversation.status,
       "isSpeaking =",
-      conversation.isSpeaking,
-      "isAgentSpeaking =",
-      isAgentSpeaking
+      conversation.isSpeaking
     );
-  }, [conversation.status, conversation.isSpeaking, isAgentSpeaking]);
+  }, [conversation.status, conversation.isSpeaking]);
 
   // Отслеживание размеров родительского контейнера
   useEffect(() => {
     const updateDimensions = () => {
       if (containerRef.current) {
         const { width, height } = containerRef.current.getBoundingClientRect();
+        console.log("Container dimensions updated:", { width, height });
         setDimensions({ width, height: height || 100 });
       }
     };
@@ -74,9 +70,10 @@ export default function VoiceInteraction() {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         console.log("Microphone access granted, stream active:", stream.active);
+        console.log("Microphone stream tracks:", stream.getAudioTracks());
         audioContextRef.current = new AudioContext();
         analyserRef.current = audioContextRef.current.createAnalyser();
-        analyserRef.current.fftSize = 128; // Уменьшено для более быстрой реакции
+        analyserRef.current.fftSize = 128;
         const source = audioContextRef.current.createMediaStreamSource(stream);
         source.connect(analyserRef.current);
 
@@ -124,7 +121,7 @@ export default function VoiceInteraction() {
   };
 
   // Симуляция амплитуды для ElevenLabs
-  const elevenLabsAmplitude = isAgentSpeaking
+  const elevenLabsAmplitude = conversation.isSpeaking
     ? Array(20).fill((dimensions.height * 0.4) * Math.sin(Date.now() / 100))
     : Array(20).fill(0);
 
@@ -147,7 +144,6 @@ export default function VoiceInteraction() {
     try {
       await conversation.endSession();
       setConversationId(null);
-      setIsAgentSpeaking(false);
       toast.loading("Анализируем диалог...");
       await analyzeConversation(conversationId, setScoreArray, setTranscript);
       console.log("Stopped conversation");
@@ -162,9 +158,7 @@ export default function VoiceInteraction() {
       "Button clicked, current status:",
       conversation.status,
       "isSpeaking:",
-      conversation.isSpeaking,
-      "isAgentSpeaking:",
-      isAgentSpeaking
+      conversation.isSpeaking
     );
     if (conversation.status === "disconnected") {
       await startConversation();
@@ -174,11 +168,11 @@ export default function VoiceInteraction() {
   };
 
   return (
-    <div className="flex flex-col items-center gap-4">
+    <div className="w-full flex flex-col items-center gap-4">
       <div ref={containerRef} className="w-full h-24">
         <svg width={dimensions.width} height={dimensions.height} preserveAspectRatio="xMidYMid meet">
           <AnimatePresence>
-            {conversation.status === "connected" && userAmplitude.length > 0 && !isAgentSpeaking && (
+            {conversation.status === "connected" && userAmplitude.length > 0 && !conversation.isSpeaking && (
               <motion.polyline
                 key="user-wave"
                 points={generateWavePoints(userAmplitude)}
@@ -191,7 +185,7 @@ export default function VoiceInteraction() {
                 transition={{ duration: 0 }}
               />
             )}
-            {conversation.status === "connected" && isAgentSpeaking && (
+            {conversation.status === "connected" && conversation.isSpeaking && (
               <motion.polyline
                 key="elevenlabs-wave"
                 points={generateWavePoints(elevenLabsAmplitude)}

@@ -1,7 +1,7 @@
 // app/page.tsx
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Settings } from "lucide-react";
 import CriteriaTable from "~/components/criteria-table";
@@ -14,10 +14,31 @@ import VoiceInteraction from "~/components/voice-interacion";
 export default function Home() {
   const [isOpened, setIsOpened] = useState(false);
   const { scoreArray } = useSettingsStore();
+  const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     console.log("Score array updated:", scoreArray);
   }, [scoreArray]);
+
+  // Отладка ширины родительского контейнера
+  useEffect(() => {
+    const updateContainerWidth = () => {
+      if (containerRef.current) {
+        const { width } = containerRef.current.getBoundingClientRect();
+        console.log("Parent container width:", width);
+      }
+    };
+
+    updateContainerWidth();
+    const resizeObserver = new ResizeObserver(updateContainerWidth);
+    if (containerRef.current) {
+      resizeObserver.observe(containerRef.current);
+    }
+
+    return () => {
+      resizeObserver.disconnect();
+    };
+  }, []);
 
   return (
     <div className="flex min-h-screen flex-col bg-gray-50">
@@ -54,10 +75,9 @@ export default function Home() {
           </div>
 
           <div
-            className={`flex flex-col justify-center transition-all duration-700 ${
-              isOpened || scoreArray.length > 0
-                ? "w-1/3 items-center"
-                : "w-full items-center px-96"
+            ref={containerRef}
+            className={`flex flex-col justify-center transition-all duration-700 w-full max-w-md mx-auto ${
+              isOpened || scoreArray.length > 0 ? "items-center" : "items-center"
             }`}
           >
             <VoiceInteraction />
