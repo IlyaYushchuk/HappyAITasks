@@ -15,9 +15,11 @@ export default function VoiceInteraction() {
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [dimensions, setDimensions] = useState({ width: 300, height: 100 });
   const [userAmplitude, setUserAmplitude] = useState<number[]>([]);
+  const [agentAmplitude, setAgentAmplitude] = useState<number[]>([]);
   const containerRef = useRef<HTMLDivElement>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
+  const agentAnalyserRef = useRef<AnalyserNode | null>(null);
   const animationFrameRef = useRef<number | null>(null);
   const { setScoreArray, setTranscript } = useSettingsStore();
 
@@ -64,7 +66,7 @@ export default function VoiceInteraction() {
     };
   }, []);
 
-  // Инициализация Web Audio API для анализа микрофона
+  // Инициализация Web Audio API для пользователя и попытка анализа ИИ
   useEffect(() => {
     const setupAudio = async () => {
       try {
@@ -72,18 +74,50 @@ export default function VoiceInteraction() {
         console.log("Microphone access granted, stream active:", stream.active);
         console.log("Microphone stream tracks:", stream.getAudioTracks());
         audioContextRef.current = new AudioContext();
+        
+        // Анализатор для пользователя
         analyserRef.current = audioContextRef.current.createAnalyser();
         analyserRef.current.fftSize = 128;
         const source = audioContextRef.current.createMediaStreamSource(stream);
         source.connect(analyserRef.current);
 
+        // Анализатор для ИИ (если доступен)
+        agentAnalyserRef.current = audioContextRef.current.createAnalyser();
+        agentAnalyserRef.current.fftSize = 128;
+
         const updateAmplitude = () => {
-          if (!analyserRef.current) return;
-          const dataArray = new Uint8Array(analyserRef.current.frequencyBinCount);
-          analyserRef.current.getByteFrequencyData(dataArray);
-          const average = dataArray.reduce((sum, val) => sum + val, 0) / dataArray.length;
-          const normalized = Math.min(average / 128, 1);
-          setUserAmplitude(Array(20).fill(normalized * dimensions.height * 0.4));
+          if (!analyserRef.current || !agentAnalyserRef.current) return;
+
+          // Пользовательская волна
+          const userDataArray = new Uint8Array(analyserRef.current.frequencyBinCount);
+          analyserRef.current.getByteFrequencyData(userDataArray);
+          const userAverage = userDataArray.reduce((sum, val) => sum + val, 0) / userDataArray.length;
+          const userNormalized = Math.min(userAverage / 128, 1);
+          setUserAmplitude(Array(30).fill(userNormalized * dimensions.height * 0.4));
+
+          // Волна ИИ
+          if (conversation.isSpeaking) {
+            const agentDataArray = conversation.getOutputByteFrequencyData();
+            if (agentDataArray && agentDataArray.length > 0) {
+              // Реальный анализ аудио ИИ
+              const agentAverage = agentDataArray.reduce((sum: number, val: number) => sum + val, 0) / agentDataArray.length;
+              const agentNormalized = Math.min(agentAverage / 128, 1);
+              setAgentAmplitude(
+                Array(30).fill(agentNormalized * dimensions.height * 0.4).map((amp) => amp * (0.8 + Math.random() * 0.4))
+              );
+              console.log("Agent audio data:", { agentAverage, agentNormalized });
+            } else {
+              // Имитация анализа с случайностью
+              const simulatedAverage = 0.5 + Math.random() * 0.5; // Псевдо-амплитуда
+              setAgentAmplitude(
+                Array(30).fill(simulatedAverage * dimensions.height * 0.4).map((amp) => amp * (0.8 + Math.random() * 0.4))
+              );
+              console.log("Simulated agent amplitude:", simulatedAverage);
+            }
+          } else {
+            setAgentAmplitude(Array(30).fill(0));
+          }
+
           animationFrameRef.current = requestAnimationFrame(updateAmplitude);
         };
 
@@ -106,7 +140,7 @@ export default function VoiceInteraction() {
         audioContextRef.current.close();
       }
     };
-  }, [conversation.status, dimensions.height]);
+  }, [conversation.status, conversation.isSpeaking, dimensions.height]);
 
   // Генерация точек волны
   const generateWavePoints = (amplitude: number[]) => {
@@ -114,16 +148,11 @@ export default function VoiceInteraction() {
     const step = dimensions.width / (amplitude.length - 1);
     amplitude.forEach((amp, i) => {
       const x = i * step;
-      const y = dimensions.height / 2 + amp * Math.sin((i / amplitude.length) * Math.PI * 4);
+      const y = dimensions.height / 2 + amp * Math.sin((i / amplitude.length) * Math.PI * 6);
       points.push(`${x},${y}`);
     });
     return points.join(" ");
   };
-
-  // Симуляция амплитуды для ElevenLabs
-  const elevenLabsAmplitude = conversation.isSpeaking
-    ? Array(20).fill((dimensions.height * 0.4) * Math.sin(Date.now() / 100))
-    : Array(20).fill(0);
 
   const startConversation = useCallback(async () => {
     try {
@@ -182,20 +211,20 @@ export default function VoiceInteraction() {
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                transition={{ duration: 0 }}
+                transition={{ duration: 0.1 }}
               />
             )}
             {conversation.status === "connected" && conversation.isSpeaking && (
               <motion.polyline
                 key="elevenlabs-wave"
-                points={generateWavePoints(elevenLabsAmplitude)}
+                points={generateWavePoints(agentAmplitude)}
                 stroke="#ef4444"
                 strokeWidth="2"
                 fill="none"
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                transition={{ duration: 0 }}
+                transition={{ duration: 0.1 }}
               />
             )}
           </AnimatePresence>
