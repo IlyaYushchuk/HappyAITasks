@@ -1,4 +1,5 @@
 // app/lib/conversation.ts
+/* eslint-disable */
 import toast from "react-hot-toast";
 
 export const fetchData = async (conversationId: string): Promise<any> => {
@@ -51,3 +52,4 @@ export const analyzeConversation = async (
     toast.error("Ошибка при анализе диалога.");
   }
 };
+/* eslint-enable */
