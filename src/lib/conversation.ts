@@ -1,7 +1,24 @@
 // app/lib/conversation.ts
 import toast from "react-hot-toast";
+import type { TranscriptEntry } from "~/stores/useSettingsStore";
 
-export const fetchData = async (conversationId: string): Promise<any> => {
+// Интерфейс для данных, возвращаемых fetchData
+interface ConversationData {
+  status?: string;
+  transcript?: TranscriptEntry[];
+}
+
+// Интерфейс для данных анализа
+interface AnalysisResponse {
+  value: string; // JSON-строка, содержащая объект с полем values
+}
+
+// Интерфейс для результата JSON.parse(analysisData.value)
+interface AnalysisValues {
+  values: number[];
+}
+
+export const fetchData = async (conversationId: string): Promise<ConversationData> => {
   const response = await fetch(`/api/routes/conversation/${conversationId}`, {
     method: "GET",
     headers: { "Content-Type": "application/json" },
@@ -12,7 +29,7 @@ export const fetchData = async (conversationId: string): Promise<any> => {
     return fetchData(conversationId);
   }
 
-  const data = await response.json();
+  const data: ConversationData = await response.json() as ConversationData;
   if (data.status === "processing") {
     await new Promise((resolve) => setTimeout(resolve, 1000));
     return fetchData(conversationId);
@@ -23,8 +40,8 @@ export const fetchData = async (conversationId: string): Promise<any> => {
 
 export const analyzeConversation = async (
   conversationId: string | null,
-  setScoreArray: (array: any[]) => void,
-  setTranscript: (transcript: any) => void
+  setScoreArray: (array: number[]) => void,
+  setTranscript: (transcript: TranscriptEntry[]) => void
 ) => {
   try {
     if (!conversationId) return;
@@ -41,8 +58,9 @@ export const analyzeConversation = async (
       body: JSON.stringify({ content: JSON.stringify(data.transcript) }),
     });
 
-    const analysisData = await analysis.json();
-    const array = JSON.parse(analysisData.value).values;
+    const analysisData: AnalysisResponse = await analysis.json() as AnalysisResponse;
+    const parsedData: AnalysisValues = JSON.parse(analysisData.value) as AnalysisValues;
+    const array = parsedData.values;
     toast.dismiss();
     toast.success("Диалог успешно проанализирован!");
     setScoreArray(array);

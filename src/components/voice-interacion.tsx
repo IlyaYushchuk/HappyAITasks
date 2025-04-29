@@ -25,16 +25,22 @@ export default function VoiceInteraction() {
   const { setScoreArray, setTranscript } = useSettingsStore();
 
   // Храним целевые амплитуды для интерполяции
-  const targetUserAmplitude = useRef<number[]>(Array(40).fill(0));
-  const targetAgentAmplitude = useRef<number[]>(Array(40).fill(0));
+  const targetUserAmplitude = useRef<number[]>(Array<number>(40).fill(0));
+  const targetAgentAmplitude = useRef<number[]>(Array<number>(40).fill(0));
+
+  interface Message {
+    content?: string;
+    role?: string;
+    [key: string]: unknown;
+  }
 
   const conversation = useConversation({
     onConnect: () => console.log("Connected"),
     onDisconnect: () => console.log("Disconnected"),
-    onMessage: (message: any) => {
+    onMessage: (message: Message) => {
       console.log("Message received:", message);
     },
-    onError: (error: any) => {
+    onError: (error: Error) => {
       console.error("ElevenLabs error:", error);
       toast.error("Ошибка ElevenLabs: " + error.message);
     },
@@ -124,7 +130,7 @@ export default function VoiceInteraction() {
           analyserRef.current.getByteFrequencyData(userDataArray);
           const userAverage = userDataArray.reduce((sum, val) => sum + val, 0) / userDataArray.length;
           const userNormalized = Math.min(userAverage / 128, 1);
-          targetUserAmplitude.current = Array(40).fill(userNormalized * dimensions.height * 0.4);
+          targetUserAmplitude.current = Array<number>(40).fill(userNormalized * dimensions.height * 0.4);
 
           // Волна ИИ
           if (conversation.isSpeaking) {
@@ -133,7 +139,7 @@ export default function VoiceInteraction() {
             if (agentDataArray && agentDataArray.length > 0) {
               const agentAverage = agentDataArray.reduce((sum: number, val: number) => sum + val, 0) / agentDataArray.length;
               const agentNormalized = Math.min(agentAverage / 128, 1);
-              targetAgentAmplitude.current = Array(40).fill(agentNormalized * dimensions.height * 0.4);
+              targetAgentAmplitude.current = Array<number>(40).fill(agentNormalized * dimensions.height * 0.4);
               console.log("Agent audio data (getOutputByteFrequencyData):", { agentAverage, agentNormalized });
             } else if (agentSourceRef.current) {
               // Анализ через <audio> элемент
@@ -141,15 +147,15 @@ export default function VoiceInteraction() {
               agentAnalyserRef.current.getByteFrequencyData(agentDataArray);
               const agentAverage = agentDataArray.reduce((sum, val) => sum + val, 0) / agentDataArray.length;
               const agentNormalized = Math.min(agentAverage / 128, 1);
-              targetAgentAmplitude.current = Array(40).fill(agentNormalized * dimensions.height * 0.4);
+              targetAgentAmplitude.current = Array<number>(40).fill(agentNormalized * dimensions.height * 0.4);
               console.log("Agent audio data (<audio>):", { agentAverage, agentNormalized });
             } else {
               // Нет доступного аудиопотока
-              targetAgentAmplitude.current = Array(40).fill(0);
+              targetAgentAmplitude.current = Array<number>(40).fill(0);
               console.log("No audio stream available for ElevenLabs");
             }
           } else {
-            targetAgentAmplitude.current = Array(40).fill(0);
+            targetAgentAmplitude.current = Array<number>(40).fill(0);
           }
 
           // Интерполяция для сглаживания
@@ -173,7 +179,7 @@ export default function VoiceInteraction() {
         toast.error("Не удалось получить доступ к микрофону. Проверьте настройки браузера.");
       }
     };
-
+ 
     if (conversation.status === "connected") {
       setupAudio();
     }
@@ -186,7 +192,7 @@ export default function VoiceInteraction() {
         audioContextRef.current.close();
       }
     };
-  }, [conversation.status, conversation.isSpeaking, dimensions.height]);
+  }, [conversation, conversation.status, conversation.isSpeaking, dimensions.height]);
 
   // Генерация точек волны
   const generateWavePoints = (amplitude: number[]) => {
@@ -200,7 +206,7 @@ export default function VoiceInteraction() {
     return points.join(" ");
   };
 
-  const startConversation = useCallback(async () => {
+    const startConversation = useCallback(async () => {
     try {
       await navigator.mediaDevices.getUserMedia({ audio: true });
       const id = await conversation.startSession({
@@ -215,32 +221,39 @@ export default function VoiceInteraction() {
     }
   }, [conversation]);
 
-  const stopConversation = useCallback(async () => {
-    try {
-      await conversation.endSession();
-      setConversationId(null);
-      toast.loading("Анализируем диалог...");
-      await analyzeConversation(conversationId, setScoreArray, setTranscript);
-      console.log("Stopped conversation");
-    } catch (error) {
-      console.error("Failed to stop conversation:", error);
-      toast.error("Ошибка при завершении диалога.");
-    }
-  }, [conversation, conversationId, setScoreArray, setTranscript]);
+    const stopConversation = useCallback(async () => {
+      try {
+        await conversation.endSession();
+        setConversationId(null);
+        toast.loading("Анализируем диалог...");
+        await analyzeConversation(conversationId, setScoreArray, setTranscript);
+        console.log("Stopped conversation");
+      } catch (error) {
+        console.error("Failed to stop conversation:", error);
+        toast.error("Ошибка при завершении диалога.");
+      }
+    }, [conversation, conversationId, setScoreArray, setTranscript]);
 
-  const handleClick = async () => {
-    console.log(
-      "Button clicked, current status:",
-      conversation.status,
-      "isSpeaking:",
-      conversation.isSpeaking
-    );
-    if (conversation.status === "disconnected") {
-      await startConversation();
-    } else if (conversation.status === "connected") {
-      await stopConversation();
-    }
-  };
+    const handleClick = async () => {
+      try {
+        console.log(
+          "Button clicked, current status:",
+          conversation.status,
+          "isSpeaking:",
+          conversation.isSpeaking
+        );
+        if (conversation.status === "disconnected") {
+          // eslint-disable-next-line @typescript-eslint/no-floating-promises
+          await startConversation();
+        } else if (conversation.status === "connected") {
+          // eslint-disable-next-line @typescript-eslint/no-floating-promises
+          await stopConversation();
+        }
+      } catch (error) {
+        console.error("Error in handleClick:", error);
+        toast.error("Произошла ошибка при управлении диалогом.");
+      }
+    };
 
   return (
     <div className="w-full flex flex-col items-center gap-4">
@@ -277,7 +290,7 @@ export default function VoiceInteraction() {
         </svg>
       </div>
       <Button
-        onClick={handleClick}
+        onClick={() => void handleClick()}
         className={`h-16 w-full rounded-lg text-lg font-semibold shadow-md transition-all duration-300 ${
           conversation.status === "connected"
             ? "border-none bg-red-600 hover:bg-red-700"

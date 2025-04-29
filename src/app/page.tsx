@@ -12,7 +12,7 @@ import useSettingsStore from "~/stores/useSettingsStore";
 import VoiceInteraction from "~/components/voice-interacion";
 
 export default function Home() {
-  const [isOpened, setIsOpened] = useState(false);
+  const [isOpened] = useState(false);
   const { scoreArray } = useSettingsStore();
   const containerRef = useRef<HTMLDivElement>(null);
 
