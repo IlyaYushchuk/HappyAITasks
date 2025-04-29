@@ -14,14 +14,19 @@ import useSettingsStore from "~/stores/useSettingsStore";
 export default function VoiceInteraction() {
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [dimensions, setDimensions] = useState({ width: 300, height: 100 });
-  const [userAmplitude, setUserAmplitude] = useState<number[]>([]);
-  const [agentAmplitude, setAgentAmplitude] = useState<number[]>([]);
+  const [userAmplitude, setUserAmplitude] = useState<number[]>(Array(40).fill(0));
+  const [agentAmplitude, setAgentAmplitude] = useState<number[]>(Array(40).fill(0));
   const containerRef = useRef<HTMLDivElement>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const agentAnalyserRef = useRef<AnalyserNode | null>(null);
+  const agentSourceRef = useRef<MediaElementAudioSourceNode | null>(null);
   const animationFrameRef = useRef<number | null>(null);
   const { setScoreArray, setTranscript } = useSettingsStore();
+
+  // Храним целевые амплитуды для интерполяции
+  const targetUserAmplitude = useRef<number[]>(Array(40).fill(0));
+  const targetAgentAmplitude = useRef<number[]>(Array(40).fill(0));
 
   const conversation = useConversation({
     onConnect: () => console.log("Connected"),
@@ -66,7 +71,10 @@ export default function VoiceInteraction() {
     };
   }, []);
 
-  // Инициализация Web Audio API для пользователя и попытка анализа ИИ
+  // Линейная интерполяция для сглаживания
+  const lerp = (start: number, end: number, t: number) => start + (end - start) * t;
+
+  // Инициализация Web Audio API и захват аудио ИИ
   useEffect(() => {
     const setupAudio = async () => {
       try {
@@ -74,16 +82,39 @@ export default function VoiceInteraction() {
         console.log("Microphone access granted, stream active:", stream.active);
         console.log("Microphone stream tracks:", stream.getAudioTracks());
         audioContextRef.current = new AudioContext();
-        
+
         // Анализатор для пользователя
         analyserRef.current = audioContextRef.current.createAnalyser();
         analyserRef.current.fftSize = 128;
         const source = audioContextRef.current.createMediaStreamSource(stream);
         source.connect(analyserRef.current);
 
-        // Анализатор для ИИ (если доступен)
+        // Анализатор для ИИ
         agentAnalyserRef.current = audioContextRef.current.createAnalyser();
         agentAnalyserRef.current.fftSize = 128;
+
+        // Попытка захвата <audio> элемента
+        const checkAudioElement = () => {
+          const audioElement = document.querySelector("audio");
+          if (
+            audioElement &&
+            audioContextRef.current &&
+            agentAnalyserRef.current &&
+            !agentSourceRef.current
+          ) {
+            console.log("Found audio element for ElevenLabs");
+            agentSourceRef.current = audioContextRef.current.createMediaElementSource(audioElement);
+            agentSourceRef.current.connect(agentAnalyserRef.current);
+            agentAnalyserRef.current.connect(audioContextRef.current.destination);
+          }
+        };
+
+        // Проверяем <audio> каждые 500 мс, пока ИИ говорит
+        const audioCheckInterval = setInterval(() => {
+          if (conversation.isSpeaking) {
+            checkAudioElement();
+          }
+        }, 500);
 
         const updateAmplitude = () => {
           if (!analyserRef.current || !agentAnalyserRef.current) return;
@@ -93,35 +124,50 @@ export default function VoiceInteraction() {
           analyserRef.current.getByteFrequencyData(userDataArray);
           const userAverage = userDataArray.reduce((sum, val) => sum + val, 0) / userDataArray.length;
           const userNormalized = Math.min(userAverage / 128, 1);
-          setUserAmplitude(Array(30).fill(userNormalized * dimensions.height * 0.4));
+          targetUserAmplitude.current = Array(40).fill(userNormalized * dimensions.height * 0.4);
 
           // Волна ИИ
           if (conversation.isSpeaking) {
+            // Попытка через getOutputByteFrequencyData
             const agentDataArray = conversation.getOutputByteFrequencyData();
             if (agentDataArray && agentDataArray.length > 0) {
-              // Реальный анализ аудио ИИ
               const agentAverage = agentDataArray.reduce((sum: number, val: number) => sum + val, 0) / agentDataArray.length;
               const agentNormalized = Math.min(agentAverage / 128, 1);
-              setAgentAmplitude(
-                Array(30).fill(agentNormalized * dimensions.height * 0.4).map((amp) => amp * (0.8 + Math.random() * 0.4))
-              );
-              console.log("Agent audio data:", { agentAverage, agentNormalized });
+              targetAgentAmplitude.current = Array(40).fill(agentNormalized * dimensions.height * 0.4);
+              console.log("Agent audio data (getOutputByteFrequencyData):", { agentAverage, agentNormalized });
+            } else if (agentSourceRef.current) {
+              // Анализ через <audio> элемент
+              const agentDataArray = new Uint8Array(agentAnalyserRef.current.frequencyBinCount);
+              agentAnalyserRef.current.getByteFrequencyData(agentDataArray);
+              const agentAverage = agentDataArray.reduce((sum, val) => sum + val, 0) / agentDataArray.length;
+              const agentNormalized = Math.min(agentAverage / 128, 1);
+              targetAgentAmplitude.current = Array(40).fill(agentNormalized * dimensions.height * 0.4);
+              console.log("Agent audio data (<audio>):", { agentAverage, agentNormalized });
             } else {
-              // Имитация анализа с случайностью
-              const simulatedAverage = 0.5 + Math.random() * 0.5; // Псевдо-амплитуда
-              setAgentAmplitude(
-                Array(30).fill(simulatedAverage * dimensions.height * 0.4).map((amp) => amp * (0.8 + Math.random() * 0.4))
-              );
-              console.log("Simulated agent amplitude:", simulatedAverage);
+              // Нет доступного аудиопотока
+              targetAgentAmplitude.current = Array(40).fill(0);
+              console.log("No audio stream available for ElevenLabs");
             }
           } else {
-            setAgentAmplitude(Array(30).fill(0));
+            targetAgentAmplitude.current = Array(40).fill(0);
           }
+
+          // Интерполяция для сглаживания
+          setUserAmplitude((prev) =>
+            prev.map((amp, i) => lerp(amp, targetUserAmplitude.current[i] ?? 0, 0.2))
+          );
+          setAgentAmplitude((prev) =>
+            prev.map((amp, i) => lerp(amp, targetAgentAmplitude.current[i] ?? 0, 0.2))
+          );
 
           animationFrameRef.current = requestAnimationFrame(updateAmplitude);
         };
 
         updateAmplitude();
+
+        return () => {
+          clearInterval(audioCheckInterval);
+        };
       } catch (error) {
         console.error("Failed to setup audio:", error);
         toast.error("Не удалось получить доступ к микрофону. Проверьте настройки браузера.");
@@ -148,7 +194,7 @@ export default function VoiceInteraction() {
     const step = dimensions.width / (amplitude.length - 1);
     amplitude.forEach((amp, i) => {
       const x = i * step;
-      const y = dimensions.height / 2 + amp * Math.sin((i / amplitude.length) * Math.PI * 6);
+      const y = dimensions.height / 2 + amp * Math.sin((i / amplitude.length) * Math.PI * 8);
       points.push(`${x},${y}`);
     });
     return points.join(" ");
@@ -211,7 +257,7 @@ export default function VoiceInteraction() {
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                transition={{ duration: 0.1 }}
+                transition={{ duration: 0.05 }}
               />
             )}
             {conversation.status === "connected" && conversation.isSpeaking && (
@@ -224,7 +270,7 @@ export default function VoiceInteraction() {
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                transition={{ duration: 0.1 }}
+                transition={{ duration: 0.05 }}
               />
             )}
           </AnimatePresence>
